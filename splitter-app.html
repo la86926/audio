@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Splitter MP3 — Corta y une audio en tu navegador</title>
+<meta name="version" content="2.0.3">
 <meta name="description" content="Corta y une archivos de audio (MP3, WAV, M4A, FLAC y más) directamente en tu navegador. Sin subir nada a ningún servidor.">
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%23E4640B"/><g stroke="white" stroke-width="4" stroke-linecap="round"><line x1="14" y1="26" x2="14" y2="38"/><line x1="23" y1="18" x2="23" y2="46"/><line x1="32" y1="12" x2="32" y2="52"/><line x1="41" y1="20" x2="41" y2="44"/><line x1="50" y1="27" x2="50" y2="37"/></g></svg>'>
 <style>
@@ -84,6 +85,7 @@
   .brand-icon svg{ display:block; }
   .brand h1{ font-size:21px; font-weight:700; letter-spacing:-.02em; }
   .brand p{ font-size:12.5px; color:var(--text-2); margin-top:1px; }
+  .app-version{ margin-left:6px; font-size:11px; opacity:.6; font-variant-numeric:tabular-nums; }
 
   /* Segmented control (tema y pestañas) */
   .seg{
@@ -182,8 +184,8 @@
   .sel-frame:active{ cursor:grabbing; }
   .handle{
     position:absolute; top:-3px; bottom:-3px; width:22px;
-    background:transparent;
-    touch-action:none; cursor:default; border:0; user-select:none;
+    background:transparent; z-index:8;
+    touch-action:none; cursor:ew-resize; border:0; user-select:none;
   }
   .handle::before{
     content:''; position:absolute; top:0; bottom:0; width:3px;
@@ -368,18 +370,6 @@
     *{ transition:none !important; animation:none !important; }
   }
 
-  /* SPLITTER_NATIVE_PATCH_V2 */
-  html,body{overscroll-behavior:none!important}
-  body{touch-action:pan-y!important}
-  .wave-box,#waveCanvas,.sel-frame,.handle,.playhead{touch-action:none!important}
-  .editor-tools{display:flex;align-items:center;justify-content:center;gap:8px;margin:14px 0 2px}
-  .editor-tool{width:42px;height:42px;border:1px solid var(--border);border-radius:11px;background:var(--surface-2);color:var(--text-2);display:grid;place-items:center;transition:transform .15s ease,color .15s ease,background .15s ease}
-  .editor-tool:hover{color:var(--text);transform:translateY(-1px)}
-  .editor-tool:active{transform:scale(.95)}
-  .editor-tool:disabled{opacity:.35;cursor:default;transform:none}
-  .editor-tool.danger{color:#d34b3f}
-  .editor-tool svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-
 
   /* SPLITTER_NATIVE_PATCH_V3 */
   html,body{overscroll-behavior:none!important}
@@ -410,7 +400,6 @@
   .wave-nav-window::after{content:'';position:absolute;left:50%;top:6px;width:15px;height:7px;transform:translateX(-50%);border-top:2px solid var(--accent);border-bottom:2px solid var(--accent);opacity:.9}
 
 </style>
-<link rel="stylesheet" href="./aux-minimal.css?v=20260731-aux">
 </head>
 <body>
 <div class="wrap">
@@ -427,8 +416,8 @@
         </svg>
       </div>
       <div>
-        <h1>Splitter MP3</h1>
-        <p>Corta y une audio sin salir del navegador</p>
+        <h1>Recortar audio</h1>
+        <p>Corta y une audio sin salir del navegador <span class="app-version">v2.0.3</span></p>
       </div>
     </div>
 
@@ -486,9 +475,9 @@
             <div class="dim-left"  id="dimL"></div>
             <div class="dim-right" id="dimR"></div>
             <div class="playhead"  id="playhead"></div>
-            <div class="sel-frame" id="selFrame" title="Arrastra para mover la selección"></div>
-            <div class="handle left" id="hL" aria-hidden="true"></div>
-            <div class="handle right" id="hR" aria-hidden="true"></div>
+            <div class="sel-frame" id="selFrame" title="Haz clic o arrastra para mover el cursor"></div>
+            <div class="handle left" id="hL" role="slider" tabindex="0" aria-label="Ajustar inicio del fragmento"></div>
+            <div class="handle right" id="hR" role="slider" tabindex="0" aria-label="Ajustar fin del fragmento"></div>
             <div class="time-tag" id="tagL">0:00.0</div>
             <div class="time-tag" id="tagR">0:00.0</div>
             <div class="time-tag pos" id="tagP" style="display:none">0:00.0</div>
@@ -630,7 +619,7 @@
     try { return localStorage.getItem('splitter-theme') || 'system'; } catch(e){ return 'system'; }
   }
   function saveTheme(v){
-    try { localStorage.setItem('splitter-theme', v); } catch(e){}
+    try { localStorage.setItem('splitter-theme', v); } catch(e){ console.debug('No se pudo guardar el tema.', e); }
   }
   function applyTheme(pref){
     const resolved = pref === 'system' ? (mql.matches ? 'dark' : 'light') : pref;
@@ -680,7 +669,7 @@
     'https://unpkg.com/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.js',
     'https://cdn.jsdelivr.net/npm/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.js'
   ];
-  let ffmpeg = null, ffLoading = null;
+  let ffmpeg = null, ffLoading = null, ffLogTail = [];
 
   function loadScript(src){
     return new Promise((res, rej) => {
@@ -709,6 +698,12 @@
         try {
           const inst = window.FFmpeg.createFFmpeg({ log:false, corePath: core, mainName:'main' });
           await inst.load();
+          if (inst.setLogger) inst.setLogger(({ type, message }) => {
+            if (!message) return;
+            ffLogTail.push(String(message));
+            if (ffLogTail.length > 30) ffLogTail.shift();
+            // stderr de FFmpeg también contiene progreso normal; se conserva en ffLogTail y sólo se muestra si la operación falla.
+          });
           ffmpeg = inst;
           return ffmpeg;
         } catch(e){ lastErr = e; }
@@ -720,19 +715,228 @@
   }
   function ffCleanup(names){
     if (!ffmpeg) return;
-    names.forEach(n => { try { ffmpeg.FS('unlink', n); } catch(e){} });
+    let entries=null;
+    try { entries=ffmpeg.FS('readdir','/'); }
+    catch(e){ console.debug('No se pudo inspeccionar el sistema temporal de FFmpeg.',e); }
+    names.forEach(n => {
+      if(entries && !entries.includes(n))return;
+      try { ffmpeg.FS('unlink', n); }
+      catch(e){ console.debug('[FFmpeg cleanup]', n, e); }
+    });
+  }
+  function ffReadOutput(ff,name){
+    try{
+      const data=ff.FS('readFile',name);
+      return data&&data.length?new Uint8Array(data):null;
+    }catch(e){
+      return null;
+    }
+  }
+  async function ffRunChecked(ff,args,expectedOutput){
+    try{
+      await ff.run(...args);
+    }catch(err){
+      const data=expectedOutput?ffReadOutput(ff,expectedOutput):null;
+      const message=err&&err.message?err.message:String(err||'');
+      if(data&&/exit\s*\(0\)|terminated with exit\s*\(0\)/i.test(message)){
+        console.debug('ffmpeg.wasm informó exit(0) como excepción; la salida válida se conserva.');
+        return data;
+      }
+      throw err;
+    }
+    if(!expectedOutput)return null;
+    const data=ffReadOutput(ff,expectedOutput);
+    if(!data)throw new Error('FFmpeg terminó sin generar el archivo esperado: '+expectedOutput);
+    return data;
+  }
+  function ffErrorMessage(err){
+    const detail = ffLogTail.slice(-6).join(' | ');
+    const base = err && err.message ? err.message : String(err || 'Error desconocido');
+    return detail ? base + ' — ' + detail : base;
   }
   function downloadBytes(bytes, filename, mime){
-    const blob = new Blob([bytes.buffer ? bytes : new Uint8Array(bytes)], { type: mime || 'application/octet-stream' });
+    const blob = new Blob([bytes], { type: mime || 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   }
+  function encoderArgs(ext){
+    switch ((ext || '').toLowerCase()){
+      case 'mp3': return ['-c:a','libmp3lame','-q:a','2'];
+      case 'wav': return ['-c:a','pcm_s16le'];
+      case 'm4a': return ['-c:a','aac','-b:a','192k','-movflags','+faststart'];
+      case 'aac': return ['-c:a','aac','-b:a','192k'];
+      case 'flac': return ['-c:a','flac'];
+      case 'ogg':
+      case 'oga': return ['-c:a','libvorbis','-q:a','5'];
+      case 'opus': return ['-c:a','libopus','-b:a','160k'];
+      case 'aiff':
+      case 'aif': return ['-c:a','pcm_s16be'];
+      case 'wma': return ['-c:a','wmav2','-b:a','192k'];
+      default: return [];
+    }
+  }
   const MIMES = { mp3:'audio/mpeg', wav:'audio/wav', m4a:'audio/mp4', aac:'audio/aac',
                   ogg:'audio/ogg', oga:'audio/ogg', opus:'audio/ogg', flac:'audio/flac',
                   aiff:'audio/aiff', aif:'audio/aiff', wma:'audio/x-ms-wma' };
+
+  function writeAscii(view, offset, text){
+    for (let i=0;i<text.length;i++) view.setUint8(offset+i,text.charCodeAt(i));
+  }
+  function buildEditedWav(buffer, plan){
+    if (!buffer || !plan.length) throw new Error('No hay audio decodificado para exportar.');
+    const rate=buffer.sampleRate;
+    const channels=Math.max(1,buffer.numberOfChannels);
+    const ranges=plan.map(clip=>{
+      const start=clamp(Math.round(clip.start*rate),0,buffer.length);
+      const end=clamp(Math.round(clip.end*rate),start,buffer.length);
+      return {start,end,frames:end-start};
+    }).filter(r=>r.frames>0);
+    const frames=ranges.reduce((sum,r)=>sum+r.frames,0);
+    if (!frames) throw new Error('La edición no contiene muestras de audio.');
+    const bytesPerSample=2, blockAlign=channels*bytesPerSample;
+    const dataSize=frames*blockAlign;
+    if (dataSize>0xffffffff-44) throw new Error('El audio editado es demasiado grande para el WAV intermedio.');
+    const out=new ArrayBuffer(44+dataSize);
+    const view=new DataView(out);
+    writeAscii(view,0,'RIFF'); view.setUint32(4,36+dataSize,true); writeAscii(view,8,'WAVE');
+    writeAscii(view,12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true);
+    view.setUint16(22,channels,true); view.setUint32(24,rate,true);
+    view.setUint32(28,rate*blockAlign,true); view.setUint16(32,blockAlign,true); view.setUint16(34,16,true);
+    writeAscii(view,36,'data'); view.setUint32(40,dataSize,true);
+    const channelData=Array.from({length:channels},(_,ch)=>buffer.getChannelData(ch));
+    let offset=44;
+    for (const range of ranges){
+      for (let frame=range.start;frame<range.end;frame++){
+        for (let ch=0;ch<channels;ch++){
+          const sample=clamp(channelData[ch][frame]||0,-1,1);
+          const value=sample<0?Math.round(sample*0x8000):Math.round(sample*0x7fff);
+          view.setInt16(offset,value,true); offset+=2;
+        }
+      }
+    }
+    return new Uint8Array(out);
+  }
+  async function decodeForExport(file, status){
+    if (audioBuf) return audioBuf;
+    const ff=await getFFmpeg(status);
+    ffLogTail=[];
+    const ext=extOf(file.name);
+    const input='splitter_decode_input.'+(ext||'bin');
+    const decoded='splitter_decode.wav';
+    ffCleanup([input,decoded]);
+    try{
+      status && status('Decodificando el audio para una exportación fiable…');
+      ff.FS('writeFile',input,await window.FFmpeg.fetchFile(file));
+      const bytes=await ffRunChecked(ff,['-i',input,'-vn','-c:a','pcm_s16le',decoded],decoded);
+      const copy=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);
+      const AC=window.AudioContext||window.webkitAudioContext;
+      if(!audioCtx)audioCtx=new AC();
+      return await audioCtx.decodeAudioData(copy);
+    }finally{
+      ffCleanup([input,decoded]);
+    }
+  }
+  async function decodeStandaloneFile(file,status,index){
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!audioCtx)audioCtx=new AC();
+    try{
+      const raw=await file.arrayBuffer();
+      return await audioCtx.decodeAudioData(raw.slice(0));
+    }catch(browserError){
+      const ff=await getFFmpeg(status);
+      ffLogTail=[];
+      const ext=extOf(file.name);
+      const input='splitter_join_decode_'+index+'.'+(ext||'bin');
+      const decoded='splitter_join_decode_'+index+'.wav';
+      ffCleanup([input,decoded]);
+      try{
+        status&&status('Decodificando '+file.name+'…');
+        ff.FS('writeFile',input,await window.FFmpeg.fetchFile(file));
+        const bytes=await ffRunChecked(ff,['-i',input,'-vn','-c:a','pcm_s16le',decoded],decoded);
+        const copy=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);
+        return await audioCtx.decodeAudioData(copy);
+      }catch(ffError){
+        console.error('No se pudo decodificar para unir:',file.name,browserError,ffError);
+        throw ffError;
+      }finally{
+        ffCleanup([input,decoded]);
+      }
+    }
+  }
+  function interpolatedSample(buffer,channel,pos,targetChannels){
+    const count=buffer.numberOfChannels;
+    const i0=Math.min(buffer.length-1,Math.max(0,Math.floor(pos)));
+    const i1=Math.min(buffer.length-1,i0+1);
+    const frac=Math.max(0,Math.min(1,pos-i0));
+    const sampleChannel=ch=>{
+      const data=buffer.getChannelData(Math.min(ch,count-1));
+      return data[i0]+(data[i1]-data[i0])*frac;
+    };
+    if(targetChannels===1&&count>1){
+      let sum=0;
+      for(let ch=0;ch<count;ch++)sum+=sampleChannel(ch);
+      return sum/count;
+    }
+    return sampleChannel(channel);
+  }
+  function buildJoinedWav(buffers){
+    if(!buffers.length)throw new Error('No hay audios para unir.');
+    const rate=buffers[0].sampleRate;
+    const channels=Math.max(1,buffers[0].numberOfChannels);
+    const framesPerBuffer=buffers.map(buffer=>Math.max(1,Math.round(buffer.duration*rate)));
+    const frames=framesPerBuffer.reduce((a,b)=>a+b,0);
+    const blockAlign=channels*2;
+    const dataSize=frames*blockAlign;
+    if(dataSize>0xffffffff-44)throw new Error('El audio unido es demasiado grande para el WAV intermedio.');
+    const out=new ArrayBuffer(44+dataSize);
+    const view=new DataView(out);
+    writeAscii(view,0,'RIFF');view.setUint32(4,36+dataSize,true);writeAscii(view,8,'WAVE');
+    writeAscii(view,12,'fmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);
+    view.setUint16(22,channels,true);view.setUint32(24,rate,true);
+    view.setUint32(28,rate*blockAlign,true);view.setUint16(32,blockAlign,true);view.setUint16(34,16,true);
+    writeAscii(view,36,'data');view.setUint32(40,dataSize,true);
+    let offset=44;
+    buffers.forEach((buffer,index)=>{
+      const outFrames=framesPerBuffer[index];
+      const ratio=buffer.sampleRate/rate;
+      for(let frame=0;frame<outFrames;frame++){
+        const srcPos=Math.min(buffer.length-1,frame*ratio);
+        for(let ch=0;ch<channels;ch++){
+          const sample=clamp(interpolatedSample(buffer,ch,srcPos,channels),-1,1);
+          const value=sample<0?Math.round(sample*0x8000):Math.round(sample*0x7fff);
+          view.setInt16(offset,value,true);offset+=2;
+        }
+      }
+    });
+    return new Uint8Array(out);
+  }
+
+  async function encodeEditedWav(wavBytes, ext, status){
+    const ff=await getFFmpeg(status);
+    ffLogTail=[];
+    const input='splitter_edited_source.wav';
+    const output='splitter_edited_output.'+ext;
+    ffCleanup([input,output]);
+    try{
+      ff.FS('writeFile',input,wavBytes);
+      const specific=encoderArgs(ext);
+      status && status('Codificando el audio editado…');
+      try{
+        return await ffRunChecked(ff,['-i',input,'-vn',...specific,output],output);
+      }catch(firstError){
+        if(!specific.length)throw firstError;
+        console.warn('El codificador preferido falló; se intentará el predeterminado del formato.',firstError);
+        ffCleanup([output]);
+        status && status('Probando un codificador compatible…');
+        return await ffRunChecked(ff,['-i',input,'-vn',output],output);
+      }
+    }finally{
+      ffCleanup([input,output]);
+    }
+  }
 
   /* ============ CORTAR: estado ============ */
   let cutFile = null;        // File original
@@ -748,6 +952,7 @@
   let audioCtx = null, playingSrc = null, playT0 = 0, playFrom = 0, rafId = 0;
   let previewEl = null, previewURL = null, playMode = null; // 'el' (elemento <audio>) | 'wa' (Web Audio)
   let loopMode = 'none', playbackLoopClip = 0, playbackReachedEnd = false;
+  let cutLoadToken = 0, exportBusy = false, ffOperationBusy = false;
 
   const waveBox = $('waveBox'), canvas = $('waveCanvas'), ctx2d = canvas.getContext('2d');
   const HANDLE_W = 22, MIN_GAP = 0.1;
@@ -818,10 +1023,10 @@
     };
   }
   function editorSnapshot(){
-    return { clips: clips.map(clip => ({...clip})), activeClip, posCursor };
+    return { clips: clips.map(clip => ({...clip})), activeClip, posCursor, viewA, viewB, loopMode };
   }
   function touchEditorSnapshot(){
-    return {...editorSnapshot(), viewA, viewB};
+    return editorSnapshot();
   }
   function restoreTouchEditorSnapshot(state){
     if (!state || !state.clips.length) return;
@@ -840,8 +1045,8 @@
     updatePlayheadUI(posCursor);
     refreshEditButtons();
   }
-  function pushEditorHistory(){
-    undoSelections.push(editorSnapshot());
+  function pushEditorHistory(snapshot = editorSnapshot()){
+    undoSelections.push(snapshot);
     if (undoSelections.length > 60) undoSelections.shift();
     redoSelections.length = 0;
     refreshEditButtons();
@@ -891,22 +1096,21 @@
   }
 
   bindDropzone($('dzCut'), $('fileCut'), files => loadCutFile(files[0]));
-  $('changeFile').addEventListener('click', () => $('fileCut').click());
+  $('changeFile').addEventListener('click', () => { if (!exportBusy && !ffOperationBusy) $('fileCut').click(); });
 
   async function loadCutFile(file){
+    if (exportBusy || ffOperationBusy) return;
+    const loadToken = ++cutLoadToken;
     resetPreview();
     cutFile = file;
-    audioBuf = null; peaks = null; dispPeaks = null;
 
-    // elemento <audio>: suena incluso con el interruptor de silencio del iPhone/iPad
     if (previewURL){ URL.revokeObjectURL(previewURL); previewURL = null; }
-    if (!previewEl){
-      previewEl = new Audio();
-      previewEl.preload = 'metadata';
-      previewEl.setAttribute('playsinline', '');
-    }
-    previewURL = URL.createObjectURL(file);
-    previewEl.src = previewURL;
+    const nextPreview = new Audio();
+    nextPreview.preload = 'metadata';
+    nextPreview.setAttribute('playsinline', '');
+    const nextURL = URL.createObjectURL(file);
+    nextPreview.src = nextURL;
+    try { nextPreview.load(); } catch(e){ console.debug('El navegador no permitió precargar el audio.', e); }
 
     $('fName').textContent = file.name;
     $('fmtBadge').textContent = (extOf(file.name) || 'audio').toUpperCase();
@@ -916,20 +1120,29 @@
     $('statCut').textContent = '';
     $('roPos').textContent = '0:00.0';
 
+    let nextBuffer = null, nextPeaks = null, nextDuration = 0;
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!audioCtx) audioCtx = new AC();
       const buf = await file.arrayBuffer();
-      audioBuf = await audioCtx.decodeAudioData(buf);
-      duration = audioBuf.duration;
-      peaks = computePeaksRange(audioBuf, 0, duration, 1200);
+      if (loadToken !== cutLoadToken) { URL.revokeObjectURL(nextURL); return; }
+      nextBuffer = await audioCtx.decodeAudioData(buf.slice(0));
+      nextDuration = nextBuffer.duration;
+      nextPeaks = computePeaksRange(nextBuffer, 0, nextDuration, 1200);
     } catch(err){
-      audioBuf = null; peaks = null; duration = 0;
-      const d = await metaDuration(previewEl);
-      if (d > 0) duration = d;
+      console.warn('No se pudo decodificar con Web Audio; se intentará con metadatos.', err);
+      const d = await metaDuration(nextPreview);
+      if (d > 0) nextDuration = d;
     }
+    if (loadToken !== cutLoadToken) { URL.revokeObjectURL(nextURL); return; }
 
-    if (!duration) duration = 0;
+    previewEl = nextPreview;
+    previewURL = nextURL;
+    audioBuf = nextBuffer;
+    peaks = nextPeaks;
+    dispPeaks = null;
+    duration = nextDuration || 0;
+
     clips = duration ? [newClip(0, duration)] : [];
     activeClip = 0;
     playbackReachedEnd = false;
@@ -938,9 +1151,10 @@
     redoSelections.length = 0;
     selStart = 0;
     selEnd = duration || 0;
-    $('fMeta').textContent = fmtSize(file.size) + (duration ? ' · ' + fmtTime(duration, true) : '');
-
     posCursor = 0;
+    $('fMeta').textContent = fmtSize(file.size) + (duration ? ' · ' + fmtTime(duration, true) : '');
+    $('statCut').textContent = duration ? '' : 'No se pudo leer la duración de este archivo. Prueba otro formato o archivo.';
+
     resetView();
     resizeCanvas();
     syncAll('code');
@@ -998,7 +1212,36 @@
   function resetView(){
     viewA = 0;
     viewB = keptDuration();
+    waveBox.dataset.viewA = viewA.toFixed(6);
+    waveBox.dataset.viewB = viewB.toFixed(6);
     scheduleWave();
+  }
+  function ensureProjectTimeVisible(t){
+    if (!isZoomed()) return;
+    const span = viewSpan(), margin = Math.min(span * .14, Math.max(.05, span / 3));
+    if (t < viewA + margin) setPreciseView(t - margin, span);
+    else if (t > viewB - margin) setPreciseView(t + margin - span, span);
+  }
+  function ensureProjectRangeVisible(a, b){
+    if (!isZoomed()) return;
+    const span = viewSpan();
+    if (b - a >= span) { setPreciseView((a + b - span) / 2, span); return; }
+    if (a < viewA) setPreciseView(a, span);
+    else if (b > viewB) setPreciseView(b - span, span);
+  }
+  function projectAfterDelete(t, a, b){
+    if (t <= a) return t;
+    if (t >= b) return t - (b - a);
+    return a;
+  }
+  function preserveViewAfterDelete(oldA, oldB, deletedA, deletedB){
+    const total = keptDuration();
+    if (!total) { resetView(); return; }
+    const oldSpan = Math.max(.001, oldB - oldA);
+    if (oldSpan >= total - .001) { resetView(); return; }
+    const span = Math.min(oldSpan, total);
+    const center = projectAfterDelete((oldA + oldB) / 2, deletedA, deletedB);
+    setPreciseView(center - span / 2, span);
   }
 
   let waveRaf = 0;
@@ -1038,6 +1281,7 @@
     drawWave();
     layoutSelection();
     layoutNavigator();
+    if (duration) updatePlayheadUI(currentPos());
   }
 
   function cssVar(name){
@@ -1197,7 +1441,7 @@
     }
     const metrics = navigatorMetrics();
     navigatorDrag = { id:e.pointerId, x:e.clientX, start:viewA, travel:metrics.travel, maxStart:metrics.maxStart };
-    try { waveNav.setPointerCapture(e.pointerId); } catch(_){}
+    try { waveNav.setPointerCapture(e.pointerId); } catch(err){ console.debug('No se pudo capturar el puntero del navegador de onda.', err); }
   });
   waveNav.addEventListener('pointermove', e => {
     if (!navigatorDrag || e.pointerId !== navigatorDrag.id) return;
@@ -1208,7 +1452,7 @@
   });
   function finishNavigatorDrag(e){
     if (!navigatorDrag || e.pointerId !== navigatorDrag.id) return;
-    try { waveNav.releasePointerCapture(e.pointerId); } catch(_){}
+    try { waveNav.releasePointerCapture(e.pointerId); } catch(err){ console.debug('No se pudo liberar el puntero del navegador de onda.', err); }
     navigatorDrag = null;
   }
   waveNav.addEventListener('pointerup', finishNavigatorDrag);
@@ -1253,6 +1497,16 @@
   }
 
   function syncAll(source){
+    waveBox.dataset.clipCount = String(clips.length);
+    waveBox.dataset.activeClip = String(activeClip);
+    waveBox.dataset.keptDuration = keptDuration().toFixed(6);
+    waveBox.dataset.cursorProject = currentClip() ? sourceToProject(activeClip, posCursor).toFixed(6) : '0.000000';
+    $('hL').setAttribute('aria-valuemin', String(clipLimits().min || 0));
+    $('hL').setAttribute('aria-valuemax', String(Math.max(0, selEnd - MIN_GAP)));
+    $('hL').setAttribute('aria-valuenow', String(selStart || 0));
+    $('hR').setAttribute('aria-valuemin', String((selStart || 0) + MIN_GAP));
+    $('hR').setAttribute('aria-valuemax', String(clipLimits().max || duration || 0));
+    $('hR').setAttribute('aria-valuenow', String(selEnd || 0));
     $('roStart').textContent = fmtTime(selStart, true);
     $('roEnd').textContent   = fmtTime(selEnd, true);
     $('roDur').textContent   = fmtTime(Math.max(0, selEnd - selStart), true);
@@ -1277,12 +1531,14 @@
   }
   ['sH','sM','sS','eH','eM','eS'].forEach(id => {
     $(id).addEventListener('change', () => {
+      if (exportBusy) return;
+      pushEditorHistory();
       let a = readHMS('s'), b = readHMS('e');
       if (duration){ a = clamp(a, 0, duration); b = clamp(b, 0, duration); }
       if (b <= a) b = a + MIN_GAP;
       setSelection(a, duration ? clamp(b, 0, duration) : b, 'inputs');
       const bounds = projectBounds(activeClip);
-      if (isZoomed() && (bounds.start < viewA - 0.001 || bounds.end > viewB + 0.001)) resetView();
+      ensureProjectRangeVisible(bounds.start, bounds.end);
       writeHMS('s', selStart); writeHMS('e', selEnd);
     });
   });
@@ -1324,7 +1580,7 @@
       seekTo(timeAtClientX(ev.clientX));
     };
     const up = ev => {
-      try{el.releasePointerCapture(e.pointerId)}catch(_){}
+      try{el.releasePointerCapture(e.pointerId)}catch(err){console.debug('No se pudo liberar el puntero.',err)}
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);
       el.removeEventListener('pointercancel', up);
@@ -1338,20 +1594,29 @@
 
   /* SPLITTER_NATIVE_INTERACTION_V3 */
   /* ---- Interacción precisa sobre toda la onda, incluida la selección ---- */
-  document.addEventListener('gesturestart',e=>e.preventDefault(),{passive:false});
-  document.addEventListener('gesturechange',e=>e.preventDefault(),{passive:false});
-  document.addEventListener('gestureend',e=>e.preventDefault(),{passive:false});
-  document.addEventListener('dblclick',e=>e.preventDefault(),{capture:true});
-  window.addEventListener('wheel',e=>{
-    if((e.ctrlKey||e.metaKey)&&!waveBox.contains(e.target))e.preventDefault();
-  },{passive:false,capture:true});
-
-  let lastTouchEnd=0;
-  document.addEventListener('touchend',e=>{
-    const now=Date.now();
-    if(now-lastTouchEnd<320)e.preventDefault();
-    lastTouchEnd=now;
-  },{passive:false,capture:true});
+  /* Safari expone gesture* además de Pointer Events. Se limita todo a la onda:
+     el editor no debe bloquear gestos ni atajos del resto de la página/navegador. */
+  let safariGestureSpan0=0, safariGestureAnchor=0, safariGestureRatio=.5;
+  waveBox.addEventListener('gesturestart',e=>{
+    if(!duration)return;
+    if(e.cancelable)e.preventDefault();
+    const rect=waveBox.getBoundingClientRect();
+    safariGestureRatio=clamp(((Number.isFinite(e.clientX)?e.clientX:rect.left+rect.width/2)-rect.left)/Math.max(1,rect.width),0,1);
+    safariGestureSpan0=viewSpan();
+    safariGestureAnchor=viewA+safariGestureRatio*safariGestureSpan0;
+  },{passive:false});
+  waveBox.addEventListener('gesturechange',e=>{
+    if(!duration||!safariGestureSpan0)return;
+    if(e.cancelable)e.preventDefault();
+    const scale=Math.max(.05,Number(e.scale)||1);
+    const span=clamp(safariGestureSpan0/scale,preciseMinSpan(),keptDuration());
+    setPreciseView(safariGestureAnchor-safariGestureRatio*span,span);
+  },{passive:false});
+  waveBox.addEventListener('gestureend',e=>{
+    if(e.cancelable)e.preventDefault();
+    safariGestureSpan0=0;
+  },{passive:false});
+  waveBox.addEventListener('dblclick',e=>{if(e.cancelable)e.preventDefault();},{capture:true});
 
   const MIN_PRECISE_SPAN=.3;
   function preciseMinSpan(){const total=keptDuration();return total?Math.min(MIN_PRECISE_SPAN,total):MIN_PRECISE_SPAN}
@@ -1388,7 +1653,7 @@
       if(Math.abs(ev.clientX-startX)>4){moved=true;seekTo(timeAtClientX(ev.clientX));}
     };
     const up=ev=>{
-      try{canvas.releasePointerCapture(e.pointerId)}catch(_){}
+      try{canvas.releasePointerCapture(e.pointerId)}catch(err){console.debug('No se pudo liberar el puntero de la onda.',err)}
       canvas.removeEventListener('pointermove',move);
       canvas.removeEventListener('pointerup',up);
       canvas.removeEventListener('pointercancel',up);
@@ -1431,7 +1696,7 @@
       singleTouchStart={id:e.pointerId,x:e.clientX,y:e.clientY,moved:false,blocked:!!e.target.closest('.handle,.playhead')};
     }
     if(waveTouchPointers.size===2){
-      e.preventDefault();
+      if(e.cancelable)e.preventDefault();
       const canPinch=touchGestureAllowsPinch&&pointerPair().every(pointer=>!pointer.trimHandle);
       if(!canPinch){
         touchGestureAllowsPinch=false;
@@ -1447,7 +1712,7 @@
       pointerPinchSpan0=viewSpan();
       pointerPinchAnchor=timeAtClientX(pointerPairMidX());
     }else if(waveTouchPointers.size>2){
-      e.preventDefault();
+      if(e.cancelable)e.preventDefault();
       pinchConsumedPointers.add(e.pointerId);
     }
   },true);
@@ -1460,15 +1725,15 @@
     if(singleTouchStart&&singleTouchStart.id===e.pointerId){
       if(Math.hypot(e.clientX-singleTouchStart.x,e.clientY-singleTouchStart.y)>5){
         singleTouchStart.moved=true;
-        if(!singleTouchStart.blocked&&!touchReservedForPinch(e)){e.preventDefault();seekTo(timeAtClientX(e.clientX));}
+        if(!singleTouchStart.blocked&&!touchReservedForPinch(e)){if(e.cancelable)e.preventDefault();seekTo(timeAtClientX(e.clientX));}
       }
     }
     if(!pointerPinchActive||waveTouchPointers.size<2){
-      if(pinchConsumedPointers.has(e.pointerId))e.preventDefault();
+      if(pinchConsumedPointers.has(e.pointerId)&&e.cancelable)e.preventDefault();
       return;
     }
     waveBox.dataset.pinchMoves=String((Number(waveBox.dataset.pinchMoves)||0)+1);
-    e.preventDefault();
+    if(e.cancelable)e.preventDefault();
     const distance=Math.max(1,pointerPairDistance());
     const midpoint=pointerPairMidX();
     const rect=waveBox.getBoundingClientRect();
@@ -1482,7 +1747,7 @@
     const wasPinching=pointerPinchActive;
     const wasConsumed=pinchConsumedPointers.has(e.pointerId);
     const wasSingle=waveTouchPointers.size===1;
-    if(wasPinching||wasConsumed)e.preventDefault();
+    if((wasPinching||wasConsumed)&&e.cancelable)e.preventDefault();
     waveTouchPointers.delete(e.pointerId);
     if(!wasConsumed&&wasSingle&&singleTouchStart&&singleTouchStart.id===e.pointerId&&!singleTouchStart.moved&&e.type==='pointerup'){
       seekTo(timeAtClientX(e.clientX));
@@ -1514,6 +1779,7 @@
   function updatePlayheadUI(t){
     const w = waveBox.clientWidth;
     const projectTime = sourceToProject(activeClip, t);
+    waveBox.dataset.cursorProject = projectTime.toFixed(6);
     const x = clamp(((projectTime - viewA) / viewSpan()) * w, 0, w);
     $('playhead').style.left = x + 'px';
     const tag = $('tagP');
@@ -1527,10 +1793,10 @@
     if (!playMode) return;
     posCursor = clamp(currentPos(), selStart, selEnd);
     if (playMode === 'el'){
-      try { previewEl.pause(); } catch(e){}
+      try { previewEl.pause(); } catch(e){ console.debug('No se pudo pausar el elemento de audio.', e); }
     } else {
       const src = playingSrc; playingSrc = null;
-      if (src){ try { src.stop(); } catch(e){} }
+      if (src){ try { src.stop(); } catch(e){ console.debug('La fuente Web Audio ya estaba detenida.', e); } }
     }
     playMode = null;
     cancelAnimationFrame(rafId);
@@ -1543,7 +1809,7 @@
   // Reinicio total (sólo al cargar otro archivo).
   function resetPreview(){
     pausePreview();
-    if (previewEl){ try { previewEl.pause(); } catch(e){} }
+    if (previewEl){ try { previewEl.pause(); } catch(e){ console.debug('No se pudo pausar el elemento de audio.', e); } }
     posCursor = 0;
     playbackReachedEnd = false;
     $('playhead').style.display = 'none';
@@ -1604,7 +1870,7 @@
     if (engine === 'wa'){
       const src = playingSrc;
       playingSrc = null;
-      if (src){ try { src.stop(); } catch(e){} }
+      if (src){ try { src.stop(); } catch(e){ console.debug('La fuente Web Audio ya estaba detenida.', e); } }
     }
 
     const clip = clips[next];
@@ -1658,7 +1924,7 @@
         await previewEl.play();
         started = true; playMode = 'el';
       } catch(e){
-        try { previewEl.pause(); } catch(_){}
+        try { previewEl.pause(); } catch(e){ console.debug('No se pudo pausar el audio tras un fallo de reproducción.', e); }
       }
     }
     // 2) Respaldo con Web Audio si el navegador no reproduce ese formato en <audio>
@@ -1698,10 +1964,10 @@
     if (loopMode === 'clip') playbackLoopClip = index;
     posCursor = t;
     if (playMode === 'el'){
-      try { previewEl.currentTime = t; } catch(e){}
+      try { previewEl.currentTime = t; } catch(e){ console.debug('No se pudo cambiar currentTime del audio.', e); }
     } else if (playMode === 'wa'){
       const src = playingSrc; playingSrc = null;
-      if (src){ try { src.stop(); } catch(e){} }
+      if (src){ try { src.stop(); } catch(e){ console.debug('La fuente Web Audio ya estaba detenida.', e); } }
       startWA(t);
     }
     showCursorUI();
@@ -1722,7 +1988,7 @@
     el.setPointerCapture(e.pointerId);
     const move = ev => { if (!touchReservedForPinch(ev)) seekTo(timeAtClientX(ev.clientX)); };
     const up = () => {
-      try{el.releasePointerCapture(e.pointerId)}catch(_){}
+      try{el.releasePointerCapture(e.pointerId)}catch(err){console.debug('No se pudo liberar el puntero.',err)}
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);
       el.removeEventListener('pointercancel', up);
@@ -1732,79 +1998,148 @@
     el.addEventListener('pointercancel', up);
   });
 
+  /* ---- Edición con asas y navegación de teclado ---- */
+  function currentProjectPosition(){ return clips.length ? sourceToProject(activeClip, posCursor) : 0; }
+  function isTypingTarget(target){
+    return !!(target && (target.matches('input,textarea,select') || target.isContentEditable || target.closest('[contenteditable="true"]')));
+  }
+  function keyboardCursorStep(){
+    return Math.min(1, Math.max(.05, viewSpan() / 90));
+  }
+  function fragmentBoundaries(){
+    const out=[0];
+    let t=0;
+    clips.forEach(clip => { t += Math.max(0,clip.end-clip.start); out.push(t); });
+    return out;
+  }
+  document.addEventListener('keydown', e => {
+    if (!duration || $('editor').hidden || isTypingTarget(e.target)) return;
+    if (e.target && e.target.closest && e.target.closest('#waveNavWindow,.handle')) return;
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const dir=e.key==='ArrowLeft'?-1:1;
+    const now=currentProjectPosition();
+    let target;
+    if (e.altKey){
+      const points=fragmentBoundaries(), eps=.01;
+      if (dir<0){
+        const previous=points.filter(t=>t<now-eps);
+        target=previous.length?previous[previous.length-1]:0;
+      }else{
+        const next=points.find(t=>t>now+eps);
+        target=next==null?keptDuration():next;
+      }
+    }else target=clamp(now+dir*keyboardCursorStep(),0,keptDuration());
+    e.preventDefault();
+    seekTo(target);
+    ensureProjectTimeVisible(target);
+  });
+
+  function bindTrimHandle(id, side){
+    const el=$(id);
+    el.addEventListener('pointerdown', e => {
+      if (!duration || exportBusy || !clips.length || touchReservedForPinch(e)) return;
+      e.preventDefault();
+      const pointerId=e.pointerId;
+      const startClip={...currentClip()};
+      const snapshot=editorSnapshot();
+      const startX=e.clientX;
+      const width=Math.max(1,waveBox.getBoundingClientRect().width);
+      const span=viewSpan();
+      let changed=false;
+      try{el.setPointerCapture(pointerId)}catch(err){console.debug('No se pudo capturar el puntero del asa; se usará seguimiento global.',err)}
+      const move=ev=>{
+        if(ev.pointerId!==pointerId||touchReservedForPinch(ev))return;
+        if(ev.cancelable)ev.preventDefault();
+        const delta=(ev.clientX-startX)/width*span;
+        const limits=clipLimits();
+        let a=startClip.start,b=startClip.end;
+        if(side==='left')a=clamp(startClip.start+delta,limits.min,startClip.end-MIN_GAP);
+        else b=clamp(startClip.end+delta,startClip.start+MIN_GAP,limits.max);
+        if(Math.abs(a-currentClip().start)<.0005&&Math.abs(b-currentClip().end)<.0005)return;
+        if(!changed){pushEditorHistory(snapshot);changed=true;}
+        setSelection(a,b,side);
+        if(snapshot.viewB-snapshot.viewA<keptDuration()-.001)setPreciseView(snapshot.viewA,snapshot.viewB-snapshot.viewA);
+        showCursorUI();updatePlayheadUI(posCursor);
+      };
+      const up=ev=>{
+        if(ev.pointerId!==pointerId)return;
+        try{el.releasePointerCapture(pointerId)}catch(err){console.debug('No se pudo liberar el puntero del asa.',err)}
+        document.removeEventListener('pointermove',move,true);
+        document.removeEventListener('pointerup',up,true);
+        document.removeEventListener('pointercancel',up,true);
+        refreshEditButtons();
+      };
+      document.addEventListener('pointermove',move,{capture:true,passive:false});
+      document.addEventListener('pointerup',up,true);
+      document.addEventListener('pointercancel',up,true);
+    });
+    el.addEventListener('keydown', e => {
+      if(exportBusy||!duration||(e.key!=='ArrowLeft'&&e.key!=='ArrowRight'))return;
+      e.preventDefault();
+      const clip=currentClip(), limits=clipLimits();
+      const delta=(e.key==='ArrowLeft'?-1:1)*Math.max(.05,Math.min(.25,viewSpan()/120));
+      pushEditorHistory();
+      if(side==='left') setSelection(clamp(clip.start+delta,limits.min,clip.end-MIN_GAP),clip.end,'left');
+      else setSelection(clip.start,clamp(clip.end+delta,clip.start+MIN_GAP,limits.max),'right');
+      const bounds=projectBounds(activeClip);ensureProjectRangeVisible(bounds.start,bounds.end);
+      showCursorUI();updatePlayheadUI(posCursor);
+    });
+  }
+  bindTrimHandle('hL','left');
+  bindTrimHandle('hR','right');
+
   /* ---- Exportar todos los fragmentos conservados como un solo audio ---- */
   $('btnCut').addEventListener('click', async () => {
-    if (!cutFile) return;
-    const plan = clips.filter(clip => clip.end > clip.start + 0.001).map(clip => ({...clip}));
-    if (!plan.length) return;
+    if (!cutFile || exportBusy || ffOperationBusy) return;
+    const sourceFile=cutFile;
+    const plan=clips.filter(clip=>clip.end>clip.start+0.001).map(clip=>({...clip}));
+    if(!plan.length)return;
     pausePreview();
 
-    const ext = extOf(cutFile.name) || 'mp3';
-    const inName = 'input.' + ext, outName = 'output.' + ext;
-    const partNames = plan.map((_, i) => 'fragmento_' + i + '.' + ext);
-    const tempNames = [inName, outName, 'fragmentos.txt', ...partNames];
-    const btn = $('btnCut'), prog = $('progCut'), bar = $('barCut'), stat = $('statCut');
-    btn.disabled = true; prog.style.display = 'block'; bar.style.width = '0%';
+    const ext=extOf(sourceFile.name)||'mp3';
+    const btn=$('btnCut'),prog=$('progCut'),bar=$('barCut'),stat=$('statCut');
+    exportBusy=true;
+    ffOperationBusy=true;
+    btn.disabled=true;
+    $('changeFile').disabled=true;
+    $('btnJoin').disabled=true;
+    prog.style.display='block';
+    bar.style.width='4%';
+    refreshEditButtons();
 
-    try {
-      const ff = await getFFmpeg(msg => stat.textContent = msg);
-      ff.setProgress(({ ratio }) => {
-        if (ratio >= 0 && ratio <= 1) bar.style.width = Math.round(ratio * 100) + '%';
-      });
-      stat.textContent = 'Preparando ' + plan.length + (plan.length === 1 ? ' fragmento…' : ' fragmentos…');
-      ff.FS('writeFile', inName, await window.FFmpeg.fetchFile(cutFile));
-      let data = null;
+    try{
+      stat.textContent='Preparando la edición…';
+      const decoded=await decodeForExport(sourceFile,msg=>stat.textContent=msg);
+      const wavBytes=buildEditedWav(decoded,plan);
+      bar.style.width='45%';
 
-      async function buildParts(copyCodec){
-        for (let i = 0; i < plan.length; i++){
-          const clip = plan[i];
-          stat.textContent = 'Preparando fragmento ' + (i + 1) + ' de ' + plan.length + '…';
-          bar.style.width = Math.round((i / Math.max(1, plan.length + 1)) * 86) + '%';
-          try { ff.FS('unlink', partNames[i]); } catch(e){}
-          const args = ['-ss', clip.start.toFixed(3), '-i', inName, '-t', (clip.end - clip.start).toFixed(3)];
-          if (copyCodec) args.push('-c', 'copy');
-          args.push(partNames[i]);
-          await ff.run(...args);
-        }
-      }
-      async function joinParts(copyCodec){
-        const list = partNames.map(name => "file '" + name + "'").join('\n');
-        ff.FS('writeFile', 'fragmentos.txt', new TextEncoder().encode(list));
-        const args = ['-f', 'concat', '-safe', '0', '-i', 'fragmentos.txt'];
-        if (copyCodec) args.push('-c', 'copy');
-        args.push(outName);
-        await ff.run(...args);
-        return ff.FS('readFile', outName);
+      let data;
+      if(ext==='wav'){
+        data=wavBytes;
+        bar.style.width='96%';
+      }else{
+        const ff=await getFFmpeg(msg=>stat.textContent=msg);
+        ff.setProgress(({ratio})=>{
+          if(ratio>=0&&ratio<=1)bar.style.width=(45+Math.round(ratio*50))+'%';
+        });
+        data=await encodeEditedWav(wavBytes,ext,msg=>stat.textContent=msg);
       }
 
-      try {
-        await buildParts(true);
-        stat.textContent = 'Uniendo los fragmentos conservados…';
-        bar.style.width = '90%';
-        data = await joinParts(true);
-      } catch(e){ data = null; }
-      if (!data || !data.length){
-        ffCleanup([...partNames, 'fragmentos.txt', outName]);
-        await buildParts(false);
-        stat.textContent = 'Uniendo los fragmentos conservados…';
-        bar.style.width = '90%';
-        try { data = await joinParts(true); }
-        catch(e){
-          try { ff.FS('unlink', outName); } catch(_){}
-          data = await joinParts(false);
-        }
-      }
-      if (!data || !data.length) throw new Error('salida vacía');
-      downloadBytes(data, baseOf(cutFile.name) + ' (editado).' + ext, MIMES[ext]);
-      bar.style.width = '100%';
-      stat.textContent = 'Listo: se descargó un solo audio con ' + plan.length + (plan.length === 1 ? ' fragmento' : ' fragmentos') + ' (' + fmtTime(keptDuration(), true) + ').';
-      ffCleanup(tempNames);
-    } catch(err){
-      stat.textContent = '';
-      ffCleanup(tempNames);
-    } finally {
-      btn.disabled = false;
-      setTimeout(() => { prog.style.display = 'none'; }, 1200);
+      downloadBytes(data,baseOf(sourceFile.name)+' (editado).'+ext,MIMES[ext]);
+      bar.style.width='100%';
+      const editedDuration=plan.reduce((sum,c)=>sum+c.end-c.start,0);
+      stat.textContent='Listo: se descargó un solo audio con '+plan.length+(plan.length===1?' fragmento':' fragmentos')+' ('+fmtTime(editedDuration,true)+').';
+    }catch(err){
+      console.error('Error al exportar el audio editado:',err,ffLogTail);
+      stat.textContent='No se pudo exportar: '+ffErrorMessage(err);
+    }finally{
+      exportBusy=false;
+      ffOperationBusy=false;
+      btn.disabled=false;
+      $('changeFile').disabled=false;
+      renderJoin();
+      refreshEditButtons();
+      setTimeout(()=>{prog.style.display='none';},1200);
     }
   });
 
@@ -1852,7 +2187,7 @@
   function iconBtn(label, path, disabled, onClick){
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'icon-btn'; b.title = label; b.setAttribute('aria-label', label);
-    b.disabled = disabled;
+    b.disabled = disabled || ffOperationBusy;
     b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="' + path + '"/></svg>';
     b.addEventListener('click', onClick);
     return b;
@@ -1863,51 +2198,54 @@
   }
 
   $('btnJoin').addEventListener('click', async () => {
-    if (joinFiles.length < 2) return;
-    const ext = extOf(joinFiles[0].name) || 'mp3';
-    const btn = $('btnJoin'), prog = $('progJoin'), bar = $('barJoin'), stat = $('statJoin');
-    btn.disabled = true; prog.style.display = 'block'; bar.style.width = '0%';
-    const names = [];
+    if(joinFiles.length<2||ffOperationBusy)return;
+    const files=joinFiles.slice();
+    const ext=extOf(files[0].name)||'mp3';
+    const btn=$('btnJoin'),prog=$('progJoin'),bar=$('barJoin'),stat=$('statJoin');
+    ffOperationBusy=true;
+    btn.disabled=true;
+    $('btnCut').disabled=true;
+    $('changeFile').disabled=true;
+    prog.style.display='block';
+    bar.style.width='3%';
+    renderJoin();
 
-    try {
-      const ff = await getFFmpeg(msg => stat.textContent = msg);
-      ff.setProgress(({ ratio }) => {
-        if (ratio >= 0 && ratio <= 1) bar.style.width = Math.round(ratio * 100) + '%';
-      });
-      stat.textContent = 'Uniendo ' + joinFiles.length + ' archivos…';
-
-      for (let i = 0; i < joinFiles.length; i++){
-        const n = 'part' + i + '.' + ext;
-        ff.FS('writeFile', n, await window.FFmpeg.fetchFile(joinFiles[i]));
-        names.push(n);
+    try{
+      const buffers=[];
+      for(let index=0;index<files.length;index++){
+        stat.textContent='Preparando '+(index+1)+' de '+files.length+': '+files[index].name;
+        buffers.push(await decodeStandaloneFile(files[index],msg=>stat.textContent=msg,index));
+        bar.style.width=(5+Math.round(((index+1)/files.length)*35))+'%';
       }
-      const listTxt = names.map(n => "file '" + n + "'").join('\n');
-      ff.FS('writeFile', 'list.txt', new TextEncoder().encode(listTxt));
-      const outName = 'joined.' + ext;
-      names.push('list.txt', outName);
+      stat.textContent='Construyendo el audio unido…';
+      const wavBytes=buildJoinedWav(buffers);
+      bar.style.width='50%';
 
-      let data = null;
-      try {
-        await ff.run('-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c', 'copy', outName);
-        data = ff.FS('readFile', outName);
-      } catch(e){ data = null; }
-      if (!data || !data.length){
-        try { ff.FS('unlink', outName); } catch(e){}
-        await ff.run('-f', 'concat', '-safe', '0', '-i', 'list.txt', outName);
-        data = ff.FS('readFile', outName);
+      let data;
+      if(ext==='wav'){
+        data=wavBytes;
+        bar.style.width='96%';
+      }else{
+        const ff=await getFFmpeg(msg=>stat.textContent=msg);
+        ff.setProgress(({ratio})=>{
+          if(ratio>=0&&ratio<=1)bar.style.width=(50+Math.round(ratio*45))+'%';
+        });
+        data=await encodeEditedWav(wavBytes,ext,msg=>stat.textContent=msg);
       }
-      if (!data || !data.length) throw new Error('salida vacía');
-      const base = baseOf(joinFiles[0].name);
-      downloadBytes(data, base + ' (unido).' + ext, MIMES[ext]);
-      bar.style.width = '100%';
-      stat.textContent = 'Listo: se descargó el archivo unido.';
-      ffCleanup(names);
-    } catch(err){
-      stat.textContent = '';
-      ffCleanup(names);
-    } finally {
-      btn.disabled = false;
-      setTimeout(() => { prog.style.display = 'none'; }, 1200);
+
+      downloadBytes(data,baseOf(files[0].name)+' (unido).'+ext,MIMES[ext]);
+      bar.style.width='100%';
+      stat.textContent='Listo: se descargó el archivo unido.';
+    }catch(err){
+      console.error('Error al unir audios:',err,ffLogTail);
+      stat.textContent='No se pudo unir: '+ffErrorMessage(err);
+    }finally{
+      ffOperationBusy=false;
+      $('btnCut').disabled=false;
+      $('changeFile').disabled=false;
+      renderJoin();
+      refreshEditButtons();
+      setTimeout(()=>{prog.style.display='none';},1200);
     }
   });
 
@@ -1925,10 +2263,10 @@
 
   const editUndo=$('editUndo'),editRedo=$('editRedo'),editCut=$('editCut'),editDelete=$('editDelete');
   function refreshEditButtons(){
-    editUndo.disabled=!undoSelections.length;
-    editRedo.disabled=!redoSelections.length;
-    editCut.disabled=!clips.length;
-    editDelete.disabled=clips.length<=1;
+    editUndo.disabled=exportBusy||!undoSelections.length;
+    editRedo.disabled=exportBusy||!redoSelections.length;
+    editCut.disabled=exportBusy||!clips.length;
+    editDelete.disabled=exportBusy||clips.length<=1;
   }
   function applyEditorSnapshot(snap){
     if(!snap||!snap.clips||!snap.clips.length)return;
@@ -1939,7 +2277,13 @@
     const clip=currentClip();
     selStart=clip.start;selEnd=clip.end;
     posCursor=clamp(snap.posCursor,clip.start,Math.max(clip.start,clip.end-.02));
-    resetView();syncAll('history');showCursorUI();updatePlayheadUI(posCursor);refreshEditButtons();
+    if (snap.loopMode) setLoopMode(snap.loopMode);
+    const total=keptDuration();
+    if (total && Number.isFinite(snap.viewA) && Number.isFinite(snap.viewB)){
+      const span=Math.min(Math.max(.001,snap.viewB-snap.viewA),total);
+      setPreciseView(snap.viewA,span);
+    } else resetView();
+    syncAll('history');showCursorUI();updatePlayheadUI(posCursor);refreshEditButtons();
   }
   editUndo.addEventListener('click',()=>{
     if(!undoSelections.length)return;
@@ -1950,7 +2294,7 @@
     undoSelections.push(editorSnapshot());applyEditorSnapshot(redoSelections.pop());
   });
   editCut.addEventListener('click',()=>{
-    if(!duration)return;
+    if(!duration||exportBusy)return;
     if(playMode)pausePreview();
     const index=clipIndexAtTime(posCursor);
     if(index<0)return;
@@ -1967,17 +2311,26 @@
     syncAll('scissors');showCursorUI();updatePlayheadUI(posCursor);refreshEditButtons();
   });
   editDelete.addEventListener('click',()=>{
-    if(!duration||clips.length<=1)return;
+    if(!duration||clips.length<=1||exportBusy)return;
     if(playMode)pausePreview();
+    const oldViewA=viewA, oldViewB=viewB;
+    const deleted=projectBounds(activeClip);
     pushEditorHistory();
     const removed=activeClip;
     clips.splice(removed,1);
     activeClip=Math.min(removed,clips.length-1);
     const clip=currentClip();
-    selStart=clip.start;selEnd=clip.end;posCursor=clip.start;
-    resetView();syncAll('delete');showCursorUI();updatePlayheadUI(posCursor);refreshEditButtons();
+    selStart=clip.start;selEnd=clip.end;
+    posCursor=removed < clips.length ? clip.start : Math.max(clip.start,clip.end-.02);
+    preserveViewAfterDelete(oldViewA,oldViewB,deleted.start,deleted.end);
+    syncAll('delete');showCursorUI();updatePlayheadUI(posCursor);refreshEditButtons();
   });
   refreshEditButtons();
+
+  window.addEventListener('beforeunload', () => {
+    pausePreview();
+    if (previewURL){ URL.revokeObjectURL(previewURL); previewURL = null; }
+  });
 
   /* ============ Arranque ============ */
   applyTheme(storedTheme());

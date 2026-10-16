@@ -1,0 +1,65 @@
+name: Splitter MP3 editor verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - splitter-app.html
+      - tests/verify_splitter_editor.js
+      - .github/workflows/splitter-ui-test.yml
+  pull_request:
+    paths:
+      - index.html
+      - splitter-app.html
+      - tests/verify_splitter_editor.js
+      - .github/workflows/splitter-ui-test.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install browser test dependencies
+        run: |
+          npm init -y
+          npm install --save-dev playwright
+          npx playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Run full Chromium editor verification
+        run: |
+          python3 -m http.server 4173 >/tmp/splitter-server.log 2>&1 &
+          BROWSER=chromium node tests/verify_splitter_editor.js
+
+  webkit-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install WebKit smoke-test dependencies
+        run: |
+          npm init -y
+          npm install --save-dev playwright
+          npx playwright install --with-deps webkit
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Run WebKit smoke verification
+        run: |
+          python3 -m http.server 4173 >/tmp/splitter-server.log 2>&1 &
+          BROWSER=webkit SMOKE=1 node tests/verify_splitter_editor.js
