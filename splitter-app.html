@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Splitter MP3 — Corta y une audio en tu navegador</title>
-<meta name="version" content="2.1.2">
+<meta name="version" content="2.2.0">
 <meta name="description" content="Corta y une archivos de audio (MP3, WAV, M4A, FLAC y más) directamente en tu navegador. Sin subir nada a ningún servidor.">
-<link rel="icon" type="image/svg+xml" href="./logo.svg?v=2.1.2">
-<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=2.1.2">
-<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=2.1.2">
-<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2.1.2">
+<link rel="icon" type="image/svg+xml" href="./logo.svg?v=2.2.0">
+<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=2.2.0">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=2.2.0">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2.2.0">
 <meta name="apple-mobile-web-app-title" content="Recortar audio">
 <style>
   /* ---------- Tokens ---------- */
@@ -446,7 +446,7 @@
       </div>
       <div>
         <h1>Recortar audio</h1>
-        <p>Corta y une audio sin salir del navegador <span class="app-version">v2.1.2</span></p>
+        <p>Corta y une audio sin salir del navegador <span class="app-version">v2.2.0</span></p>
       </div>
     </div>
 
@@ -1891,6 +1891,7 @@
   function currentPos(){
     if (playMode === 'el') return previewEl.currentTime;
     if (playMode === 'wa') return playFrom + (audioCtx.currentTime - playT0) * playRate;
+    if (playMode === 'wl') return Math.min(selEnd, fxWlPos.pos + Math.max(0, audioCtx.currentTime - fxWlPos.t) * fx.speed);
     return posCursor;
   }
   function showCursorUI(){
@@ -1915,6 +1916,8 @@
     posCursor = clamp(currentPos(), selStart, selEnd);
     if (playMode === 'el'){
       try { previewEl.pause(); } catch(e){ console.debug('No se pudo pausar el elemento de audio.', e); }
+    } else if (playMode === 'wl'){
+      stopWL();
     } else {
       const src = playingSrc; playingSrc = null;
       if (src){ try { src.stop(); } catch(e){ console.debug('La fuente Web Audio ya estaba detenida.', e); } }
@@ -2006,6 +2009,8 @@
         const resumed = previewEl.play();
         if (resumed && resumed.catch) resumed.catch(() => pausePreview());
       } catch(e){ pausePreview(); }
+    } else if (engine === 'wl'){
+      startWL(clip.start);
     } else {
       startWA(clip.start);
     }
@@ -2062,7 +2067,16 @@
         try { previewEl.pause(); } catch(e){ console.debug('No se pudo pausar el audio tras un fallo de reproducción.', e); }
       }
     }
-    // 2) Respaldo con Web Audio si el navegador no reproduce ese formato en <audio>
+    // 2) Con efectos: procesador en tiempo real (tono y velocidad cambian al instante)
+    if (!started && useFx){
+      const engine = await ensureFxEngine();
+      if (engine){
+        if (audioCtx.state === 'suspended') await audioCtx.resume();
+        startWL(from);
+        started = true;
+      }
+    }
+    // 3) Respaldo con Web Audio si el navegador no reproduce ese formato en <audio>
     if (!started && audioBuf){
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!audioCtx) audioCtx = new AC();
@@ -2105,6 +2119,8 @@
       const src = playingSrc; playingSrc = null;
       if (src){ try { src.stop(); } catch(e){ console.debug('La fuente Web Audio ya estaba detenida.', e); } }
       startWA(t);
+    } else if (playMode === 'wl'){
+      startWL(t);
     }
     showCursorUI();
     updatePlayheadUI(t);
@@ -2730,7 +2746,7 @@
   let fxRenderTimer = 0;
   function scheduleFxRender(delay = 380){
     clearTimeout(fxRenderTimer);
-    if (!audioBuf || !fxNeedsRender()){ updateFxStatus(); return; }
+    if (!audioBuf || !fxNeedsRender() || fxRealtimeAvailable()){ updateFxStatus(); return; }
     if (fxReady && fxReady.pitch === fx.pitch && fxReady.speed === fx.speed){ updateFxStatus(); return; }
     updateFxStatus(true);
     fxRenderTimer = setTimeout(async () => {
@@ -2753,7 +2769,23 @@
   // Si suena algo, continúa desde el mismo punto con los ajustes nuevos.
   function syncFxPlayback(){
     if (fxGain) fxGain.gain.value = fx.volume;
-    if (!playMode || !audioBuf) return;
+    postFxParams();
+    if (!playMode || !audioBuf || playMode === 'wl') return; // en tiempo real ya se aplicó
+    if (fxActive() && fxRealtimeAvailable()){
+      if (fxEngine && fxEngine.srcBuf === audioBuf){
+        const t = clamp(currentPos(), selStart, selEnd);
+        if (playMode === 'el'){ try { previewEl.pause(); } catch(e){ console.debug('No se pudo pausar el audio.', e); } }
+        else { const src = playingSrc; playingSrc = null; if (src){ try { src.stop(); } catch(e){ console.debug('La fuente ya estaba detenida.', e); } } }
+        prepareAudioSession();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        posCursor = t;
+        startWL(t);
+        startPlaybackTicker();
+      } else {
+        ensureFxEngine().then(engine => { if (engine && playMode && playMode !== 'wl') syncFxPlayback(); });
+      }
+      return;
+    }
     if (playMode === 'el'){
       if (!fxActive()) return;                       // sin efectos, el <audio> sigue igual
     } else if (playingBuf === fxPlaybackSource().buf) return; // sólo cambió el volumen
@@ -2765,6 +2797,172 @@
     if (audioCtx.state === 'suspended') audioCtx.resume();
     startWA(t);
     startPlaybackTicker();
+  }
+
+
+  /* ---- Procesador en tiempo real (AudioWorklet) ----
+     Reproduce el audio original aplicando tono, velocidad y volumen mientras suena:
+     cada ~23 ms toma un "grano", lo alinea con el anterior (WSOLA) y lo remuestrea.
+     Los cambios del deslizador se oyen al instante. La exportación sigue usando el
+     procesado completo (fxProcess) para la máxima calidad. */
+  const FX_WORKLET_CODE = `
+class FxPlayer extends AudioWorkletProcessor{
+  constructor(){
+    super();
+    this.ch=null;this.mono=null;this.len=0;this.rate=sampleRate;
+    this.pitch=1;this.speed=1;this.gain=1;
+    this.playing=false;this.token=0;this.nominal=0;this.end=0;this.prev=-1;
+    const N=1<<Math.ceil(Math.log2(sampleRate*0.046));
+    this.N=N;this.Hs=N>>1;this.D=N>>2;this.L=N>>1;this.pad=N*3;
+    this.win=new Float32Array(N);
+    for(let n=0;n<N;n++)this.win[n]=0.5-0.5*Math.cos(2*Math.PI*n/N);
+    this.ready=[];this.tail=[];this.ri=this.Hs;this.q=0;
+    this.port.onmessage=e=>this.onMsg(e.data);
+  }
+  onMsg(d){
+    if(d.cmd==='source'){
+      this.ch=d.channels;this.len=d.channels[0].length;this.rate=d.rate;
+      const pad=this.pad,m=new Float32Array(this.len+2*pad),k=1/this.ch.length;
+      for(const c of this.ch)for(let i=0;i<this.len;i++)m[pad+i]+=c[i]*k;
+      this.mono=m;
+      this.ready=this.ch.map(()=>new Float32Array(this.Hs));
+      this.tail=this.ch.map(()=>new Float32Array(this.Hs));
+      this.playing=false;
+      this.port.postMessage({type:'loaded'});
+    }else if(d.cmd==='params'){
+      this.pitch=d.pitch;this.speed=d.speed;this.gain=d.gain;
+    }else if(d.cmd==='play'){
+      if(!this.ch)return;
+      this.token=d.token;this.nominal=d.from*this.rate;this.end=d.end*this.rate;this.prev=-1;
+      for(const t of this.tail)t.fill(0);
+      this.ri=this.Hs;this.q=0;this.playing=true;
+    }else if(d.cmd==='stop'){
+      this.playing=false;
+    }
+  }
+  score(c,nat,stride){
+    const m=this.mono,p=this.pitch,pad=this.pad,L=this.L;
+    let dot=0,en=1e-9;
+    for(let n=0;n<L;n+=stride){const v=m[pad+Math.round(c+n*p)];dot+=m[pad+Math.round(nat+n*p)]*v;en+=v*v;}
+    return dot/Math.sqrt(en);
+  }
+  synth(){
+    const N=this.N,Hs=this.Hs,D=this.D,p=this.pitch,sp=this.speed,nominal=this.nominal;
+    let s=Math.round(nominal);
+    const identity=Math.abs(p-1)<1e-4&&Math.abs(sp-1)<1e-4;
+    if(this.prev>=0&&!identity){
+      const nat=this.prev+Hs*p;
+      let best=s,bs=-Infinity;
+      for(let d=-D;d<=D;d+=16){const c=s+d;if(c<0)continue;const v=this.score(c,nat,16);if(v>bs){bs=v;best=c;}}
+      let b2=best;bs=-Infinity;
+      for(let d=-15;d<=15;d+=3){const c=best+d;if(c<0)continue;const v=this.score(c,nat,4);if(v>bs){bs=v;b2=c;}}
+      let b3=b2;bs=-Infinity;
+      for(let d=-2;d<=2;d++){const c=b2+d;if(c<0)continue;const v=this.score(c,nat,2);if(v>bs){bs=v;b3=c;}}
+      s=b3;
+    }
+    const len=this.len,win=this.win;
+    for(let c=0;c<this.ch.length;c++){
+      const src=this.ch[c],tail=this.tail[c],out=this.ready[c];
+      for(let n=0;n<N;n++){
+        const x=s+n*p,i0=Math.floor(x);
+        let v=0;
+        if(i0>=0&&i0<len){const f=x-i0,a=src[i0],b=i0+1<len?src[i0+1]:0;v=a+(b-a)*f;}
+        v*=win[n];
+        if(n<Hs)out[n]=tail[n]+v;else tail[n-Hs]=v;
+      }
+    }
+    this.prev=s;this.nominal=nominal+Hs*sp;
+  }
+  process(inputs,outputs){
+    const out=outputs[0];
+    if(!this.playing||!this.ch){for(const o of out)o.fill(0);return true;}
+    const frames=out[0].length,nOut=out.length,nCh=this.ch.length;
+    for(let i=0;i<frames;i++){
+      if(this.ri>=this.Hs){
+        if(this.nominal>=this.end){
+          this.playing=false;
+          this.port.postMessage({type:'ended',token:this.token});
+          for(const o of out)o.fill(0,i);
+          return true;
+        }
+        this.synth();this.ri=0;
+      }
+      const g=this.gain;
+      for(let c=0;c<nOut;c++)out[c][i]=this.ready[Math.min(c,nCh-1)][this.ri]*g;
+      this.ri++;
+    }
+    if(++this.q>=4){
+      this.q=0;
+      const pos=(this.nominal-(this.Hs-this.ri)*this.speed)/this.rate;
+      this.port.postMessage({type:'pos',token:this.token,pos,t:currentTime});
+    }
+    return true;
+  }
+}
+registerProcessor('fx-player',FxPlayer);
+`;
+  let fxEngine = null, fxEnginePromise = null, fxEngineFailed = false, fxWorkletLoaded = false;
+  let fxWlToken = 0, fxWlPos = { pos:0, t:0 };
+  function fxRealtimeAvailable(){
+    return !fxEngineFailed && typeof AudioWorkletNode !== 'undefined' &&
+      !!(window.AudioContext || window.webkitAudioContext) && 'audioWorklet' in (window.AudioContext || window.webkitAudioContext).prototype;
+  }
+  function onFxEngineMessage(e){
+    const d = e.data;
+    if (!d || d.token !== fxWlToken || playMode !== 'wl') return;
+    if (d.type === 'pos') fxWlPos = { pos: d.pos, t: d.t };
+    else if (d.type === 'ended'){ posCursor = selEnd; advancePlaybackSegment(); }
+  }
+  function postFxParams(){
+    if (fxEngine) fxEngine.node.port.postMessage({ cmd:'params', pitch: Math.pow(2, fx.pitch / 12), speed: fx.speed, gain: fx.volume });
+  }
+  function ensureFxEngine(){
+    if (!audioBuf || !fxRealtimeAvailable()) return Promise.resolve(null);
+    if (fxEngine && fxEngine.srcBuf === audioBuf) return Promise.resolve(fxEngine);
+    if (fxEnginePromise) return fxEnginePromise;
+    fxEnginePromise = (async () => {
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!audioCtx) audioCtx = new AC();
+        if (!fxWorkletLoaded){
+          const url = URL.createObjectURL(new Blob([FX_WORKLET_CODE], { type: 'text/javascript' }));
+          await audioCtx.audioWorklet.addModule(url);
+          fxWorkletLoaded = true;
+        }
+        const srcBuf = audioBuf;
+        if (fxEngine){ try { fxEngine.node.port.postMessage({ cmd:'stop' }); fxEngine.node.disconnect(); } catch(e){ console.debug('Procesador anterior ya cerrado.', e); } }
+        const node = new AudioWorkletNode(audioCtx, 'fx-player', { numberOfInputs:0, numberOfOutputs:1, outputChannelCount:[Math.max(1, srcBuf.numberOfChannels)] });
+        node.connect(audioCtx.destination);
+        node.port.onmessage = onFxEngineMessage;
+        const channels = bufferChannelsCopy(srcBuf);
+        node.port.postMessage({ cmd:'source', channels, rate: srcBuf.sampleRate }, channels.map(c => c.buffer));
+        fxEngine = { node, srcBuf };
+        postFxParams();
+        return srcBuf === audioBuf ? fxEngine : null;
+      } catch(err){
+        console.warn('Sin procesador en tiempo real; se usará el procesado completo.', err);
+        fxEngineFailed = true;
+        if (fxNeedsRender()) scheduleFxRender(0);
+        return null;
+      } finally {
+        fxEnginePromise = null;
+      }
+    })();
+    return fxEnginePromise;
+  }
+  function startWL(from){
+    const clip = currentClip();
+    if (!clip || !fxEngine) return;
+    fxWlToken++;
+    postFxParams();
+    fxEngine.node.port.postMessage({ cmd:'play', from, end: clip.end, token: fxWlToken });
+    fxWlPos = { pos: from, t: audioCtx.currentTime };
+    playFrom = from;
+    playMode = 'wl';
+  }
+  function stopWL(){
+    fxWlToken++;
+    if (fxEngine) fxEngine.node.port.postMessage({ cmd:'stop' });
   }
 
   /* ---- Interfaz: botón → deslizador → Aceptar ---- */
@@ -2847,6 +3045,7 @@
     const ui = FX_UI[key];
     fxOpen = key;
     fxOpenSnapshot = editorSnapshot();
+    ensureFxEngine();
     fxRange.min = String(ui.min); fxRange.max = String(ui.max); fxRange.step = String(ui.step);
     fxRange.value = String(fx[key]);
     fxRange.setAttribute('aria-label', ui.label);

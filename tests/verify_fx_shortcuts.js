@@ -259,6 +259,29 @@ async function main() {
   await page.waitForTimeout(300);
   assert((await state(page)).cursorProject === still, 'La vista siguió moviéndose después de soltar.');
 
+  // ---- Tiempo real: mientras suena, el cambio de velocidad/tono se aplica al instante
+  await page.locator('h1').click();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(250);
+  await page.click('.fx-btn[data-fx="speed"]');
+  await page.locator('#fxRange').evaluate(el => { el.value = '2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  assert(!(await page.locator('.fx-bar').evaluate(el => el.classList.contains('busy'))), 'La velocidad no se aplicó en tiempo real (quedó procesando).');
+  await page.waitForTimeout(150);
+  const rt0 = (await state(page)).cursorProject;
+  await page.waitForTimeout(500);
+  const rt1 = (await state(page)).cursorProject;
+  assert(rt1 - rt0 > 0.8, `El cambio de velocidad no fue inmediato (avanzó ${(rt1 - rt0).toFixed(2)} s en 0.5 s).`);
+  await page.locator('#fxRange').evaluate(el => { el.value = '1'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.click('#fxAccept');
+  await page.click('.fx-btn[data-fx="pitch"]');
+  await page.locator('#fxRange').evaluate(el => { el.value = '7'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  assert(!(await page.locator('.fx-bar').evaluate(el => el.classList.contains('busy'))), 'El tono no se aplicó en tiempo real.');
+  assert(await page.locator('#icoPause').isVisible(), 'El audio se detuvo al cambiar el tono.');
+  await page.click('#fxReset');
+  await page.click('#fxAccept');
+  await page.keyboard.press('Space');
+
   assert(errors.length === 0, 'Errores de página: ' + errors.join(' | '));
   console.log('VERIFIED fx+shortcuts');
   await browser.close();
