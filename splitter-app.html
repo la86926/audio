@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Splitter MP3 — Corta y une audio en tu navegador</title>
-<meta name="version" content="2.1.1">
+<meta name="version" content="2.1.2">
 <meta name="description" content="Corta y une archivos de audio (MP3, WAV, M4A, FLAC y más) directamente en tu navegador. Sin subir nada a ningún servidor.">
-<link rel="icon" type="image/svg+xml" href="./logo.svg?v=2.1.1">
-<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=2.1.1">
-<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=2.1.1">
-<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2.1.1">
+<link rel="icon" type="image/svg+xml" href="./logo.svg?v=2.1.2">
+<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=2.1.2">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=2.1.2">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2.1.2">
 <meta name="apple-mobile-web-app-title" content="Recortar audio">
 <style>
   /* ---------- Tokens ---------- */
@@ -204,6 +204,11 @@
     transition:opacity var(--dur) ease;
   }
   .time-tag.pos{ background:var(--accent); color:#fff; }
+  .hover-line{
+    position:absolute; top:0; bottom:0; width:0; z-index:5; pointer-events:none;
+    border-left:1.5px dashed var(--text-2); opacity:.7;
+  }
+  .time-tag.hover{ top:auto; bottom:6px; z-index:7; background:var(--surface); color:var(--text-2); border:1px solid var(--border); }
   .playhead{
     position:absolute; top:0; bottom:0; width:2px; background:var(--text);
     border-radius:2px; display:none; z-index:6;
@@ -441,7 +446,7 @@
       </div>
       <div>
         <h1>Recortar audio</h1>
-        <p>Corta y une audio sin salir del navegador <span class="app-version">v2.1.1</span></p>
+        <p>Corta y une audio sin salir del navegador <span class="app-version">v2.1.2</span></p>
       </div>
     </div>
 
@@ -1596,6 +1601,36 @@
     return viewA + clamp((clientX - r.left) / r.width, 0, 1) * viewSpan();
   }
 
+  /* Ratón (ordenador): un clic sobre la onda pausa lo que suena y deja el cursor ahí;
+     Espacio o ▶ continúan desde ese punto. Si el navegador pierde el "soltar" del clic,
+     el arrastre se cierra solo en cuanto el ratón se mueve sin botón pulsado. */
+  function pauseForMouse(e){ if (e.pointerType !== 'touch' && playMode) pausePreview(); }
+  function mouseReleased(ev){ return ev.pointerType !== 'touch' && ev.buttons === 0; }
+
+  /* Línea flotante: sigue al ratón sin clic e indica el tiempo; no toca el audio. */
+  const hoverLine = document.createElement('div');
+  hoverLine.className = 'hover-line';
+  hoverLine.setAttribute('aria-hidden', 'true');
+  const hoverTag = document.createElement('div');
+  hoverTag.className = 'time-tag hover';
+  hoverTag.setAttribute('aria-hidden', 'true');
+  waveBox.appendChild(hoverLine);
+  waveBox.appendChild(hoverTag);
+  function hideHover(){ hoverLine.style.display = 'none'; hoverTag.style.display = 'none'; }
+  hideHover();
+  waveBox.addEventListener('pointermove', e => {
+    if (!duration || e.pointerType === 'touch' || e.buttons !== 0 || e.target.closest('.handle')){ hideHover(); return; }
+    const r = waveBox.getBoundingClientRect();
+    const x = clamp(e.clientX - r.left, 0, r.width);
+    hoverLine.style.left = x + 'px';
+    hoverLine.style.display = 'block';
+    hoverTag.style.left = clamp(x, 26, r.width - 26) + 'px';
+    hoverTag.textContent = fmtTime(timeAtClientX(e.clientX), true);
+    hoverTag.style.display = 'block';
+  });
+  waveBox.addEventListener('pointerleave', hideHover);
+  waveBox.addEventListener('pointerdown', hideHover);
+
   /* Arrastre del cursor: recorre libremente todo el audio, sin importar los recortes.
      Si la onda está ampliada y el dedo/ratón llega al borde, la vista se desplaza sola
      (más rápido cuanto más se acerca o se pasa del borde) y el cursor sigue avanzando. */
@@ -1637,21 +1672,27 @@
   $('selFrame').addEventListener('pointerdown', e => {
     if (!duration || touchReservedForPinch(e)) return;
     e.preventDefault();
+    pauseForMouse(e);
     const el = e.currentTarget;
-    el.setPointerCapture(e.pointerId);
+    try{el.setPointerCapture(e.pointerId)}catch(err){console.debug('No se pudo capturar el puntero.',err)}
     const startX = e.clientX;
-    let moved = false;
+    let moved = false, done = false;
     const move = ev => {
+      if (ev.pointerId !== e.pointerId) return;
+      if (mouseReleased(ev)){ up(ev); return; }
       if (touchReservedForPinch(ev)) return;
       if (!moved && Math.abs(ev.clientX - startX) <= 4) return;
       moved = true;
       scrubTo(ev.clientX);
     };
     const up = ev => {
+      if (done || (ev.pointerId != null && ev.pointerId !== e.pointerId)) return;
+      done = true;
       try{el.releasePointerCapture(e.pointerId)}catch(err){console.debug('No se pudo liberar el puntero.',err)}
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);
       el.removeEventListener('pointercancel', up);
+      el.removeEventListener('lostpointercapture', up);
       // Toque o arrastre: recorrer libremente la línea de tiempo.
       if (!touchReservedForPinch(ev) && !moved && ev.type === 'pointerup') seekTo(timeAtClientX(ev.clientX));
       stopScrub();
@@ -1659,6 +1700,7 @@
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);
+    el.addEventListener('lostpointercapture', up);
   });
 
   /* SPLITTER_NATIVE_INTERACTION_V3 */
@@ -1715,23 +1757,30 @@
   canvas.addEventListener('pointerdown',e=>{
     if(!duration||!e.isPrimary||e.pointerType==='touch')return;
     e.preventDefault();
-    canvas.setPointerCapture(e.pointerId);
+    pauseForMouse(e);
+    try{canvas.setPointerCapture(e.pointerId)}catch(err){console.debug('No se pudo capturar el puntero de la onda.',err)}
     const startX=e.clientX;
-    let moved=false;
+    let moved=false,done=false;
     const move=ev=>{
+      if(ev.pointerId!==e.pointerId)return;
+      if(mouseReleased(ev)){up(ev);return;}
       if(moved||Math.abs(ev.clientX-startX)>4){moved=true;scrubTo(ev.clientX);}
     };
     const up=ev=>{
+      if(done||(ev.pointerId!=null&&ev.pointerId!==e.pointerId))return;
+      done=true;
       try{canvas.releasePointerCapture(e.pointerId)}catch(err){console.debug('No se pudo liberar el puntero de la onda.',err)}
       canvas.removeEventListener('pointermove',move);
       canvas.removeEventListener('pointerup',up);
       canvas.removeEventListener('pointercancel',up);
+      canvas.removeEventListener('lostpointercapture',up);
       if(!moved&&ev.type==='pointerup')seekTo(timeAtClientX(ev.clientX));
       stopScrub();
     };
     canvas.addEventListener('pointermove',move);
     canvas.addEventListener('pointerup',up);
     canvas.addEventListener('pointercancel',up);
+    canvas.addEventListener('lostpointercapture',up);
   });
 
   /* La rueda amplía sobre las ondas y la selección; las asas sólo recortan. */
@@ -2071,19 +2120,29 @@
   $('playhead').addEventListener('pointerdown', e => {
     if (!duration || touchReservedForPinch(e)) return;
     e.preventDefault();
+    pauseForMouse(e);
     const el = e.currentTarget;
-    el.setPointerCapture(e.pointerId);
-    const move = ev => { if (!touchReservedForPinch(ev)) scrubTo(ev.clientX); };
-    const up = () => {
+    try{el.setPointerCapture(e.pointerId)}catch(err){console.debug('No se pudo capturar el puntero.',err)}
+    let done = false;
+    const move = ev => {
+      if (ev.pointerId !== e.pointerId) return;
+      if (mouseReleased(ev)){ up(ev); return; }
+      if (!touchReservedForPinch(ev)) scrubTo(ev.clientX);
+    };
+    const up = ev => {
+      if (done || (ev && ev.pointerId != null && ev.pointerId !== e.pointerId)) return;
+      done = true;
       stopScrub();
       try{el.releasePointerCapture(e.pointerId)}catch(err){console.debug('No se pudo liberar el puntero.',err)}
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);
       el.removeEventListener('pointercancel', up);
+      el.removeEventListener('lostpointercapture', up);
     };
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);
+    el.addEventListener('lostpointercapture', up);
   });
 
   /* ---- Edición con asas y navegación de teclado ---- */
@@ -2180,7 +2239,9 @@
       let changed=false;
       try{el.setPointerCapture(pointerId)}catch(err){console.debug('No se pudo capturar el puntero del asa; se usará seguimiento global.',err)}
       const move=ev=>{
-        if(ev.pointerId!==pointerId||touchReservedForPinch(ev))return;
+        if(ev.pointerId!==pointerId)return;
+        if(mouseReleased(ev)){up(ev);return;}
+        if(touchReservedForPinch(ev))return;
         if(ev.cancelable)ev.preventDefault();
         const delta=(ev.clientX-startX)/width*span;
         const limits=clipLimits();
@@ -2480,14 +2541,17 @@
       const Hs = N >> 1, Ha = Hs / stretch, D = N >> 2, L = N >> 1;
       const win = new Float32Array(N);
       for (let n = 0; n < N; n++) win[n] = 0.5 - 0.5 * Math.cos(2 * Math.PI * n / N);
-      const mono = new Float32Array(inLen);
-      for (const ch of channels) for (let i = 0; i < inLen; i++) mono[i] += ch[i] / channels.length;
+      // Señal mono con relleno de ceros: el bucle interno no necesita comprobar límites.
+      const pad = N + D + 16;
+      const mono = new Float32Array(inLen + 2 * pad);
+      const scale = 1 / channels.length;
+      for (const ch of channels) for (let i = 0; i < inLen; i++) mono[pad + i] += ch[i] * scale;
       const outLen = Math.max(1, Math.ceil(inLen * stretch));
       const out = channels.map(() => new Float32Array(outLen + N));
-      const at = i => (i >= 0 && i < inLen ? mono[i] : 0);
       const score = (cand, natural, stride) => {
         let dot = 0, energy = 1e-9;
-        for (let n = 0; n < L; n += stride){ const b = at(cand + n); dot += at(natural + n) * b; energy += b * b; }
+        const c0 = pad + cand, n0 = pad + natural;
+        for (let n = 0; n < L; n += stride){ const v = mono[c0 + n]; dot += mono[n0 + n] * v; energy += v * v; }
         return dot / Math.sqrt(energy);
       };
       let prev = 0;
@@ -2496,25 +2560,27 @@
         if (outPos >= outLen) break;
         let best = Math.round(k * Ha);
         if (k > 0){
-          const natural = prev + Hs, nominal = Math.round(k * Ha);
+          const natural = prev + Hs, nominal = best;
           let bestScore = -Infinity;
-          for (let d = -D; d <= D; d += 8){
+          for (let d = -D; d <= D; d += 16){
             const c = nominal + d; if (c < 0) continue;
-            const v = score(c, natural, 8); if (v > bestScore){ bestScore = v; best = c; }
+            const v = score(c, natural, 16); if (v > bestScore){ bestScore = v; best = c; }
           }
           const coarse = best; bestScore = -Infinity;
-          for (let d = -7; d <= 7; d++){
+          for (let d = -15; d <= 15; d += 3){
             const c = coarse + d; if (c < 0) continue;
+            const v = score(c, natural, 4); if (v > bestScore){ bestScore = v; best = c; }
+          }
+          const mid = best; bestScore = -Infinity;
+          for (let d = -2; d <= 2; d++){
+            const c = mid + d; if (c < 0) continue;
             const v = score(c, natural, 2); if (v > bestScore){ bestScore = v; best = c; }
           }
         }
+        const limit = Math.min(N, inLen - best);
         for (let c = 0; c < channels.length; c++){
           const src = channels[c], dst = out[c];
-          for (let n = 0; n < N; n++){
-            const i = best + n;
-            if (i >= inLen) break;
-            dst[outPos + n] += src[i] * win[n];
-          }
+          for (let n = 0; n < limit; n++) dst[outPos + n] += src[best + n] * win[n];
         }
         prev = best;
       }
@@ -2534,38 +2600,54 @@
     return work.map(ch => (ch.buffer.byteLength === ch.length * 4 && ch.byteOffset === 0 ? ch : ch.slice()));
   }
 
-  let fxWorker = null, fxWorkerBusy = null, fxJobSerial = 0;
+  let fxWorker = null, fxWorkerBusy = null, fxJobSerial = 0, fxWorkerURL = null, fxWorkerBroken = false;
   function fxWorkerInstance(){
-    if (fxWorker) return fxWorker;
+    if (fxWorker || fxWorkerBroken) return fxWorker;
     try {
-      const code = 'const fxProcess=' + fxProcess.toString() + ';self.onmessage=e=>{const d=e.data;' +
-        'try{const out=fxProcess(d.channels,d.rate,d.semitones,d.speed);self.postMessage({id:d.id,channels:out},out.map(c=>c.buffer));}' +
-        'catch(err){self.postMessage({id:d.id,error:String(err&&err.message||err)});}};';
-      const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
-      fxWorker = new Worker(url);
-      URL.revokeObjectURL(url);
+      if (!fxWorkerURL){
+        const code = 'const fxProcess=' + fxProcess.toString() + ';self.onmessage=e=>{const d=e.data;' +
+          'try{const out=fxProcess(d.channels,d.rate,d.semitones,d.speed);self.postMessage({id:d.id,channels:out},out.map(c=>c.buffer));}' +
+          'catch(err){self.postMessage({id:d.id,error:String(err&&err.message||err)});}};';
+        // Safari carga el Worker de forma asíncrona: la URL se conserva mientras exista la página.
+        fxWorkerURL = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+      }
+      fxWorker = new Worker(fxWorkerURL);
     } catch(e){
       console.warn('Web Worker no disponible; los efectos se procesarán en la página.', e);
       fxWorker = null;
+      fxWorkerBroken = true;
     }
     return fxWorker;
   }
-  // Procesa canales sin bloquear la página; un trabajo nuevo cancela al anterior.
-  function runFxJob(channels, rate, semitones, speed){
+  function dropFxWorker(){
+    if (fxWorker){ try { fxWorker.terminate(); } catch(e){ console.debug('El procesador ya estaba cerrado.', e); } }
+    fxWorker = null;
+  }
+  // Procesa canales en segundo plano; un trabajo nuevo cancela al anterior.
+  function runFxJob(makeChannels, rate, semitones, speed){
+    if (fxWorkerBusy){ const busy = fxWorkerBusy; fxWorkerBusy = null; dropFxWorker(); busy.reject(new Error('cancelado')); }
     const id = ++fxJobSerial;
     const worker = fxWorkerInstance();
-    if (!worker){
-      return new Promise(resolve => setTimeout(() => resolve(fxProcess(channels, rate, semitones, speed)), 0));
-    }
-    if (fxWorkerBusy){ fxWorkerBusy.reject(new Error('cancelado')); worker.terminate(); fxWorker = null; return runFxJob(channels, rate, semitones, speed); }
+    if (!worker) return new Promise(resolve => setTimeout(() => resolve(fxProcess(makeChannels(), rate, semitones, speed)), 30));
+    const channels = makeChannels();
     return new Promise((resolve, reject) => {
-      fxWorkerBusy = { id, reject };
+      const fallback = () => {
+        if (!fxWorkerBusy || fxWorkerBusy.id !== id) return;
+        fxWorkerBusy = null;
+        dropFxWorker();
+        fxWorkerBroken = true;
+        console.warn('El procesador en segundo plano no respondió; se procesará en la página.');
+        setTimeout(() => { try { resolve(fxProcess(makeChannels(), rate, semitones, speed)); } catch(err){ reject(err); } }, 30);
+      };
+      const timer = setTimeout(fallback, 45000);
+      fxWorkerBusy = { id, reject: err => { clearTimeout(timer); reject(err); } };
       worker.onmessage = e => {
-        if (e.data.id !== id) return;
+        if (!fxWorkerBusy || e.data.id !== id) return;
+        clearTimeout(timer);
         fxWorkerBusy = null;
         if (e.data.error) reject(new Error(e.data.error)); else resolve(e.data.channels);
       };
-      worker.onerror = err => { fxWorkerBusy = null; reject(err); };
+      worker.onerror = ev => { if (ev && ev.preventDefault) ev.preventDefault(); clearTimeout(timer); fallback(); };
       worker.postMessage({ id, channels, rate, semitones, speed }, channels.map(c => c.buffer));
     });
   }
@@ -2609,14 +2691,16 @@
     }).filter(r => r.end > r.start);
     const frames = ranges.reduce((sum, r) => sum + r.end - r.start, 0);
     if (!frames) throw new Error('La edición no contiene muestras de audio.');
-    let channels = Array.from({ length: count }, (_, ch) => {
+    const joinRanges = () => Array.from({ length: count }, (_, ch) => {
       const src = buffer.getChannelData(ch), dst = new Float32Array(frames);
       let offset = 0;
       ranges.forEach(r => { dst.set(src.subarray(r.start, r.end), offset); offset += r.end - r.start; });
       return dst;
     });
-    if (settings.pitch !== 0 || settings.speed !== 1){
-      channels = await runFxJob(channels, rate, settings.pitch, settings.speed);
+    let channels;
+    if (settings.pitch === 0 && settings.speed === 1) channels = joinRanges();
+    else {
+      channels = await runFxJob(joinRanges, rate, settings.pitch, settings.speed);
       scheduleFxRender(0); // por si la exportación interrumpió el procesado para reproducir
     }
     return wavFromChannels(channels, rate, settings.volume);
@@ -2644,7 +2728,7 @@
   }
 
   let fxRenderTimer = 0;
-  function scheduleFxRender(delay = 220){
+  function scheduleFxRender(delay = 380){
     clearTimeout(fxRenderTimer);
     if (!audioBuf || !fxNeedsRender()){ updateFxStatus(); return; }
     if (fxReady && fxReady.pitch === fx.pitch && fxReady.speed === fx.speed){ updateFxStatus(); return; }
@@ -2653,7 +2737,7 @@
       if (exportBusy){ scheduleFxRender(500); return; }
       const want = { pitch: fx.pitch, speed: fx.speed }, source = audioBuf;
       try {
-        const channels = await runFxJob(bufferChannelsCopy(source), source.sampleRate, want.pitch, want.speed);
+        const channels = await runFxJob(() => bufferChannelsCopy(source), source.sampleRate, want.pitch, want.speed);
         if (source !== audioBuf || want.pitch !== fx.pitch || want.speed !== fx.speed) return;
         fxReady = { pitch: want.pitch, speed: want.speed, buf: channelsToBuffer(channels, source.sampleRate) };
         updateFxStatus();
@@ -2782,7 +2866,7 @@
   function resetFxForNewFile(){
     clearTimeout(fxRenderTimer);
     fxJobSerial++;
-    if (fxWorkerBusy && fxWorker){ fxWorkerBusy = null; fxWorker.terminate(); fxWorker = null; }
+    if (fxWorkerBusy){ fxWorkerBusy = null; dropFxWorker(); }
     fx = { ...FX_DEFAULT };
     fxReady = null;
     fxOpen = null; fxOpenSnapshot = null;

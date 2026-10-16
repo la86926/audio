@@ -195,11 +195,50 @@ async function main() {
   assert(near(a.freq, FREQ / 2, 12), 'Tono −12 no bajó una octava: ' + a.freq);
   assert(near(wav.seconds, 12, 0.15), 'Velocidad ×0.5 no duplicó la duración: ' + wav.seconds);
 
+  const box = await page.locator('#waveBox').boundingBox();
+  const y = box.y + box.height / 2;
+  // ---- Ratón sin clic: línea flotante independiente; el audio sigue su curso
+  await page.click('.fx-btn[data-fx="pitch"]'); await page.click('#fxReset'); await page.click('#fxAccept');
+  await page.click('.fx-btn[data-fx="speed"]'); await page.click('#fxReset'); await page.click('#fxAccept');
+  await page.locator('h1').click();
+  await page.keyboard.press('Home');
+  await page.mouse.move(box.x + box.width * 0.5, y - 200);
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(300);
+  const before = (await state(page)).cursorProject;
+  await page.mouse.move(box.x + box.width * 0.85, y, { steps: 6 });
+  await page.mouse.move(box.x + box.width * 0.65, y, { steps: 6 });
+  await page.waitForTimeout(300);
+  const during = (await state(page)).cursorProject;
+  const keptNow = (await state(page)).keptDuration;
+  assert(during - before < 1.2 && during >= before, `Mover el ratón sin clic cambió la reproducción (${before} → ${during}).`);
+  assert(await page.locator('.hover-line').isVisible(), 'No aparece la línea que sigue al ratón.');
+  assert(await page.locator('#icoPause').isVisible(), 'El audio dejó de sonar al mover el ratón.');
+
+  // Clic: pausa y deja el cursor donde se hizo clic; Espacio continúa desde ahí
+  await page.mouse.click(box.x + box.width * 0.75, y);
+  await page.waitForTimeout(150);
+  assert(await page.locator('#icoPlay').isVisible(), 'El clic no pausó la reproducción.');
+  const clicked = (await state(page)).cursorProject;
+  assert(near(clicked, keptNow * 0.75, keptNow * 0.03), `El cursor no quedó donde se hizo clic (${clicked}).`);
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(500);
+  const resumed = (await state(page)).cursorProject;
+  assert(await page.locator('#icoPause').isVisible() && resumed > clicked && resumed - clicked < 1, 'Espacio no continuó desde el clic.');
+  await page.keyboard.press('Space');
+
+  // Si el navegador pierde el "soltar" del clic, mover el ratón no debe arrastrar el cursor
+  const stuckFrom = (await state(page)).cursorProject;
+  await page.locator('#waveCanvas').evaluate((c, x) => {
+    c.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, clientX: x, buttons: 1 }));
+  }, box.x + box.width * 0.2);
+  await page.mouse.move(box.x + box.width * 0.9, y, { steps: 8 });
+  const afterStuck = (await state(page)).cursorProject;
+  assert(Math.abs(afterStuck - stuckFrom) < keptNow * 0.25, `El cursor quedó enganchado al ratón sin botón pulsado (${stuckFrom} → ${afterStuck}).`);
+
   // ---- Arrastrar el cursor con la onda ampliada: no se frena en el borde visible ni en los cortes
   await page.locator('h1').click();
   await page.keyboard.press('Home');
-  const box = await page.locator('#waveBox').boundingBox();
-  const y = box.y + box.height / 2;
   await page.mouse.move(box.x + box.width * 0.1, y);
   for (let i = 0; i < 6; i++) { await page.mouse.wheel(0, -150); await page.waitForTimeout(30); }
   const zoomed = await page.locator('#waveBox').evaluate(el => ({ a: Number(el.dataset.viewA), b: Number(el.dataset.viewB) }));
