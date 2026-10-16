@@ -195,6 +195,31 @@ async function main() {
   assert(near(a.freq, FREQ / 2, 12), 'Tono −12 no bajó una octava: ' + a.freq);
   assert(near(wav.seconds, 12, 0.15), 'Velocidad ×0.5 no duplicó la duración: ' + wav.seconds);
 
+  // ---- Arrastrar el cursor con la onda ampliada: no se frena en el borde visible ni en los cortes
+  await page.locator('h1').click();
+  await page.keyboard.press('Home');
+  const box = await page.locator('#waveBox').boundingBox();
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + box.width * 0.1, y);
+  for (let i = 0; i < 6; i++) { await page.mouse.wheel(0, -150); await page.waitForTimeout(30); }
+  const zoomed = await page.locator('#waveBox').evaluate(el => ({ a: Number(el.dataset.viewA), b: Number(el.dataset.viewB) }));
+  assert(zoomed.b - zoomed.a < 2, 'La rueda no amplió la onda.');
+  const ph = await page.locator('#playhead').boundingBox();
+  await page.mouse.move(ph.x + 1, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width + 30, y, { steps: 6 });
+  await page.waitForTimeout(1800);
+  const far = (await state(page)).cursorProject;
+  assert(far > zoomed.b + 0.8, `El cursor se frenó en el borde visible (${far.toFixed(2)} vs fin de vista ${zoomed.b.toFixed(2)}).`);
+  await page.mouse.move(box.x - 30, y, { steps: 10 });
+  await page.waitForTimeout(1800);
+  const back = (await state(page)).cursorProject;
+  assert(back < far - 0.8, 'El cursor no volvió hacia atrás por el borde izquierdo.');
+  await page.mouse.up();
+  const still = (await state(page)).cursorProject;
+  await page.waitForTimeout(300);
+  assert((await state(page)).cursorProject === still, 'La vista siguió moviéndose después de soltar.');
+
   assert(errors.length === 0, 'Errores de página: ' + errors.join(' | '));
   console.log('VERIFIED fx+shortcuts');
   await browser.close();

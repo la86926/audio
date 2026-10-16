@@ -4,11 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta name="version" content="2.1.0">
-<link rel="icon" type="image/svg+xml" href="./logo.svg?v=2.1.0">
-<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=2.1.0">
-<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=2.1.0">
-<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2.1.0">
+<meta name="version" content="2.1.1">
+<link rel="icon" type="image/svg+xml" href="./logo.svg?v=2.1.1">
+<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=2.1.1">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=2.1.1">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2.1.1">
 <meta name="apple-mobile-web-app-title" content="Recortar audio">
 <title>Splitter MP3</title>
 <style>html,body{margin:0;min-height:100%;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}#loader{min-height:100vh;display:grid;place-items:center;color:#6e6e73;font-size:14px}</style>
@@ -17,7 +17,7 @@
 <div id="loader">Abriendo Splitter MP3…</div>
 <script>
 (async()=>{
-  const response=await fetch('./splitter-app.html?v=2.1.0',{cache:'no-store'});
+  const response=await fetch('./splitter-app.html?v=2.1.1',{cache:'no-store'});
   if(!response.ok)throw new Error('No se pudo cargar Splitter MP3.');
   const source=await response.text();
   document.open();document.write(source);document.close();

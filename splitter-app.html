@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Splitter MP3 — Corta y une audio en tu navegador</title>
-<meta name="version" content="2.1.0">
+<meta name="version" content="2.1.1">
 <meta name="description" content="Corta y une archivos de audio (MP3, WAV, M4A, FLAC y más) directamente en tu navegador. Sin subir nada a ningún servidor.">
-<link rel="icon" type="image/svg+xml" href="./logo.svg?v=2.1.0">
-<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=2.1.0">
-<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=2.1.0">
-<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2.1.0">
+<link rel="icon" type="image/svg+xml" href="./logo.svg?v=2.1.1">
+<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=2.1.1">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=2.1.1">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2.1.1">
 <meta name="apple-mobile-web-app-title" content="Recortar audio">
 <style>
   /* ---------- Tokens ---------- */
@@ -441,7 +441,7 @@
       </div>
       <div>
         <h1>Recortar audio</h1>
-        <p>Corta y une audio sin salir del navegador <span class="app-version">v2.1.0</span></p>
+        <p>Corta y une audio sin salir del navegador <span class="app-version">v2.1.1</span></p>
       </div>
     </div>
 
@@ -976,6 +976,7 @@
   let audioCtx = null, playingSrc = null, playT0 = 0, playFrom = 0, rafId = 0;
   let previewEl = null, previewURL = null, playMode = null; // 'el' (elemento <audio>) | 'wa' (Web Audio)
   let loopMode = 'none', playbackLoopClip = 0, playbackReachedEnd = false;
+  let elSeekTarget = 0, elSeekUntil = 0;
   let cutLoadToken = 0, exportBusy = false, ffOperationBusy = false;
   const FX_DEFAULT = { pitch: 0, speed: 1, volume: 1 };
   let fx = { ...FX_DEFAULT };      // tono (semitonos), velocidad (×), volumen (×)
@@ -1595,6 +1596,44 @@
     return viewA + clamp((clientX - r.left) / r.width, 0, 1) * viewSpan();
   }
 
+  /* Arrastre del cursor: recorre libremente todo el audio, sin importar los recortes.
+     Si la onda está ampliada y el dedo/ratón llega al borde, la vista se desplaza sola
+     (más rápido cuanto más se acerca o se pasa del borde) y el cursor sigue avanzando. */
+  const SCRUB_EDGE = 32;
+  const scrub = { active:false, x:0, raf:0, last:0 };
+  function scrubEdgeSpeed(clientX){
+    const r = waveBox.getBoundingClientRect();
+    const edge = Math.min(SCRUB_EDGE, r.width / 6);
+    if (clientX < r.left + edge) return -Math.min(1, (r.left + edge - clientX) / (edge + 60));
+    if (clientX > r.right - edge) return Math.min(1, (clientX - (r.right - edge)) / (edge + 60));
+    return 0;
+  }
+  function scrubTo(clientX){
+    scrub.active = true;
+    scrub.x = clientX;
+    seekTo(timeAtClientX(clientX));
+    if (!scrub.raf && isZoomed() && scrubEdgeSpeed(clientX)){
+      scrub.last = performance.now();
+      scrub.raf = requestAnimationFrame(scrubTick);
+    }
+  }
+  function scrubTick(now){
+    scrub.raf = 0;
+    if (!scrub.active || !isZoomed()) return;
+    const v = scrubEdgeSpeed(scrub.x);
+    if (!v) return;
+    const dt = Math.min(.05, Math.max(0, (now - scrub.last) / 1000));
+    scrub.last = now;
+    const span = viewSpan();
+    setPreciseView(viewA + Math.sign(v) * span * (.4 + 2.2 * Math.abs(v)) * dt, span);
+    seekTo(timeAtClientX(scrub.x));
+    scrub.raf = requestAnimationFrame(scrubTick);
+  }
+  function stopScrub(){
+    scrub.active = false;
+    if (scrub.raf){ cancelAnimationFrame(scrub.raf); scrub.raf = 0; }
+  }
+
   $('selFrame').addEventListener('pointerdown', e => {
     if (!duration || touchReservedForPinch(e)) return;
     e.preventDefault();
@@ -1606,7 +1645,7 @@
       if (touchReservedForPinch(ev)) return;
       if (!moved && Math.abs(ev.clientX - startX) <= 4) return;
       moved = true;
-      seekTo(timeAtClientX(ev.clientX));
+      scrubTo(ev.clientX);
     };
     const up = ev => {
       try{el.releasePointerCapture(e.pointerId)}catch(err){console.debug('No se pudo liberar el puntero.',err)}
@@ -1615,6 +1654,7 @@
       el.removeEventListener('pointercancel', up);
       // Toque o arrastre: recorrer libremente la línea de tiempo.
       if (!touchReservedForPinch(ev) && !moved && ev.type === 'pointerup') seekTo(timeAtClientX(ev.clientX));
+      stopScrub();
     };
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', up);
@@ -1679,7 +1719,7 @@
     const startX=e.clientX;
     let moved=false;
     const move=ev=>{
-      if(Math.abs(ev.clientX-startX)>4){moved=true;seekTo(timeAtClientX(ev.clientX));}
+      if(moved||Math.abs(ev.clientX-startX)>4){moved=true;scrubTo(ev.clientX);}
     };
     const up=ev=>{
       try{canvas.releasePointerCapture(e.pointerId)}catch(err){console.debug('No se pudo liberar el puntero de la onda.',err)}
@@ -1687,6 +1727,7 @@
       canvas.removeEventListener('pointerup',up);
       canvas.removeEventListener('pointercancel',up);
       if(!moved&&ev.type==='pointerup')seekTo(timeAtClientX(ev.clientX));
+      stopScrub();
     };
     canvas.addEventListener('pointermove',move);
     canvas.addEventListener('pointerup',up);
@@ -1737,6 +1778,7 @@
       restoreTouchEditorSnapshot(touchGestureSnapshot);
       pointerPinchActive=true;
       singleTouchStart=null;
+      stopScrub();
       pointerPinchDistance0=Math.max(1,pointerPairDistance());
       pointerPinchSpan0=viewSpan();
       pointerPinchAnchor=timeAtClientX(pointerPairMidX());
@@ -1754,7 +1796,7 @@
     if(singleTouchStart&&singleTouchStart.id===e.pointerId){
       if(Math.hypot(e.clientX-singleTouchStart.x,e.clientY-singleTouchStart.y)>5){
         singleTouchStart.moved=true;
-        if(!singleTouchStart.blocked&&!touchReservedForPinch(e)){if(e.cancelable)e.preventDefault();seekTo(timeAtClientX(e.clientX));}
+        if(!singleTouchStart.blocked&&!touchReservedForPinch(e)){if(e.cancelable)e.preventDefault();scrubTo(e.clientX);}
       }
     }
     if(!pointerPinchActive||waveTouchPointers.size<2){
@@ -1786,6 +1828,7 @@
       const [id,p]=[...waveTouchPointers.entries()][0];
       singleTouchStart={id,x:p.x,y:p.y,moved:true,blocked:true};
     }else if(waveTouchPointers.size===0){
+      stopScrub();
       singleTouchStart=null;
       touchGestureSnapshot=null;
       touchGestureAllowsPinch=true;
@@ -1924,6 +1967,15 @@
     const tick = () => {
       if (!playMode) return;
       const t = currentPos();
+      if (playMode === 'el' && elSeekUntil){
+        // Mientras el salto no se haya aplicado, el cursor se queda donde lo dejó el usuario.
+        if (performance.now() < elSeekUntil && Math.abs(t - elSeekTarget) > 0.25){
+          updatePlayheadUI(posCursor);
+          rafId = requestAnimationFrame(tick);
+          return;
+        }
+        elSeekUntil = 0;
+      }
       if (playMode === 'el' && t >= selEnd - 0.004){
         posCursor = selEnd;
         updatePlayheadUI(posCursor);
@@ -1999,6 +2051,7 @@
     posCursor = t;
     if (playMode === 'el'){
       try { previewEl.currentTime = t; } catch(e){ console.debug('No se pudo cambiar currentTime del audio.', e); }
+      elSeekTarget = t; elSeekUntil = performance.now() + 700;
     } else if (playMode === 'wa'){
       const src = playingSrc; playingSrc = null;
       if (src){ try { src.stop(); } catch(e){ console.debug('La fuente Web Audio ya estaba detenida.', e); } }
@@ -2020,8 +2073,9 @@
     e.preventDefault();
     const el = e.currentTarget;
     el.setPointerCapture(e.pointerId);
-    const move = ev => { if (!touchReservedForPinch(ev)) seekTo(timeAtClientX(ev.clientX)); };
+    const move = ev => { if (!touchReservedForPinch(ev)) scrubTo(ev.clientX); };
     const up = () => {
+      stopScrub();
       try{el.releasePointerCapture(e.pointerId)}catch(err){console.debug('No se pudo liberar el puntero.',err)}
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);
