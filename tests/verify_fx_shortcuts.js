@@ -54,8 +54,13 @@ async function setFx(page, key, value) {
   if (!open) await page.click(`.fx-btn[data-fx="${key}"]`);
   await page.locator('.fx-panel').waitFor({ state: 'visible' });
   await page.locator('#fxRange').evaluate((el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); }, value);
-  await page.click('#fxAccept');
-  assert(!(await page.locator('.fx-panel').isVisible()), 'Aceptar no ocultó el deslizador de ' + key + '.');
+  assert(await page.locator('.fx-panel').isVisible(), 'El deslizador de ' + key + ' se cerró solo.');
+  await closeFx(page);
+}
+async function closeFx(page) {
+  // Sin botón Aceptar: el cambio ya está aplicado; tocar de nuevo el botón cierra el deslizador.
+  if (await page.locator('.fx-panel').isVisible()) await page.click('.fx-btn[aria-expanded="true"]');
+  assert(!(await page.locator('.fx-panel').isVisible()), 'El botón del efecto no cerró el deslizador.');
 }
 async function waitFxIdle(page) {
   await page.waitForFunction(() => !document.querySelector('.fx-bar').classList.contains('busy'), null, { timeout: 30000 });
@@ -130,10 +135,40 @@ async function main() {
   await page.waitForTimeout(150);
   assert(await page.locator('#icoPlay').isVisible(), 'Espacio no pausó.');
 
-  // El atajo no debe actuar mientras se escribe en un campo
+  // En una casilla de tiempo, Borrar edita el número; X sigue siendo atajo (prioridad absoluta)
   await page.locator('#sS').focus();
+  await page.keyboard.press('Backspace');
+  assert((await state(page)).clipCount === 2, 'Borrar eliminó un fragmento mientras se editaba una casilla.');
   await page.keyboard.press('x');
-  assert((await state(page)).clipCount === 2, 'X actuó mientras se escribía en un campo.');
+  assert((await state(page)).clipCount === 3, 'X no recortó con el foco en una casilla de tiempo.');
+  await page.keyboard.press('ControlOrMeta+z');
+  assert((await state(page)).clipCount === 2, 'Deshacer no funcionó con el foco en una casilla.');
+  await page.locator('h1').click();
+
+  // Con el foco en un deslizador o en un botón, los atajos siguen mandando
+  await page.click('.fx-btn[data-fx="volume"]');
+  await page.locator('#fxRange').focus();
+  const vol0 = await page.locator('#fxRange').inputValue();
+  const cur0 = (await state(page)).cursorProject;
+  await page.keyboard.press('ArrowRight');
+  assert(near((await state(page)).cursorProject, cur0 + 1 / 30, 0.005), '→ no movió el cursor con el foco en el deslizador.');
+  assert((await page.locator('#fxRange').inputValue()) === vol0, '→ movió el deslizador en vez del cursor.');
+  await page.keyboard.press('Shift+ArrowRight');
+  await page.keyboard.press('x');
+  assert((await state(page)).clipCount === 3, 'X no recortó con el foco en el deslizador.');
+  await page.keyboard.press('Backspace');
+  assert((await state(page)).clipCount === 2, 'Borrar no eliminó el fragmento con el foco en el deslizador.');
+  await page.keyboard.press('ControlOrMeta+z');
+  await page.keyboard.press('ControlOrMeta+z');
+  assert((await state(page)).clipCount === 2 && near((await state(page)).keptDuration, 6, 0.02), 'Deshacer desde el deslizador no restauró el estado.');
+  await page.locator('#playBtn').focus();
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(250);
+  assert(await page.locator('#icoPause').isVisible(), 'Espacio con el foco en un botón no reprodujo.');
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(150);
+  assert(await page.locator('#icoPlay').isVisible(), 'Espacio con el foco en un botón no pausó (doble pulsación).');
+  await closeFx(page);
   await page.locator('h1').click();
 
   // ---- Volumen: la onda crece y el archivo sube de nivel
@@ -153,7 +188,7 @@ async function main() {
   // Regresar a como estaba
   await page.click('.fx-btn[data-fx="volume"]');
   await page.click('#fxReset');
-  await page.click('#fxAccept');
+  await closeFx(page);
   assert(await page.locator('.fx-btn[data-fx="volume"] .fx-chip').isHidden(), 'Original no restableció el volumen.');
 
   // ---- Velocidad ×2: mitad de duración, mismo tono
@@ -195,13 +230,14 @@ async function main() {
   assert(near(a.freq, FREQ / 2, 12), 'Tono −12 no bajó una octava: ' + a.freq);
   assert(near(wav.seconds, 12, 0.15), 'Velocidad ×0.5 no duplicó la duración: ' + wav.seconds);
 
-  const box = await page.locator('#waveBox').boundingBox();
-  const y = box.y + box.height / 2;
   // ---- Ratón sin clic: línea flotante independiente; el audio sigue su curso
-  await page.click('.fx-btn[data-fx="pitch"]'); await page.click('#fxReset'); await page.click('#fxAccept');
-  await page.click('.fx-btn[data-fx="speed"]'); await page.click('#fxReset'); await page.click('#fxAccept');
+  await page.click('.fx-btn[data-fx="pitch"]'); await page.click('#fxReset'); await closeFx(page);
+  await page.click('.fx-btn[data-fx="speed"]'); await page.click('#fxReset'); await closeFx(page);
   await page.locator('h1').click();
   await page.keyboard.press('Home');
+  await page.locator('#waveBox').scrollIntoViewIfNeeded();
+  const box = await page.locator('#waveBox').boundingBox();
+  const y = box.y + box.height / 2;
   await page.mouse.move(box.x + box.width * 0.5, y - 200);
   await page.keyboard.press('Space');
   await page.waitForTimeout(300);
@@ -273,13 +309,13 @@ async function main() {
   const rt1 = (await state(page)).cursorProject;
   assert(rt1 - rt0 > 0.8, `El cambio de velocidad no fue inmediato (avanzó ${(rt1 - rt0).toFixed(2)} s en 0.5 s).`);
   await page.locator('#fxRange').evaluate(el => { el.value = '1'; el.dispatchEvent(new Event('input', { bubbles: true })); });
-  await page.click('#fxAccept');
+  await closeFx(page);
   await page.click('.fx-btn[data-fx="pitch"]');
   await page.locator('#fxRange').evaluate(el => { el.value = '7'; el.dispatchEvent(new Event('input', { bubbles: true })); });
   assert(!(await page.locator('.fx-bar').evaluate(el => el.classList.contains('busy'))), 'El tono no se aplicó en tiempo real.');
   assert(await page.locator('#icoPause').isVisible(), 'El audio se detuvo al cambiar el tono.');
   await page.click('#fxReset');
-  await page.click('#fxAccept');
+  await closeFx(page);
   await page.keyboard.press('Space');
 
   assert(errors.length === 0, 'Errores de página: ' + errors.join(' | '));

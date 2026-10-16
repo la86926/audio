@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Splitter MP3 — Corta y une audio en tu navegador</title>
-<meta name="version" content="2.2.1">
+<meta name="version" content="2.3.0">
 <meta name="description" content="Corta y une archivos de audio (MP3, WAV, M4A, FLAC y más) directamente en tu navegador. Sin subir nada a ningún servidor.">
-<link rel="icon" type="image/svg+xml" href="./logo.svg?v=2.2.1">
-<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=2.2.1">
-<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=2.2.1">
-<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2.2.1">
+<link rel="icon" type="image/svg+xml" href="./logo.svg?v=2.3.0">
+<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=2.3.0">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=2.3.0">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2.3.0">
 <meta name="apple-mobile-web-app-title" content="Recortar audio">
 <style>
   /* ---------- Tokens ---------- */
@@ -413,10 +413,9 @@
   #fxRange::-moz-range-thumb{width:24px;height:24px;border-radius:50%;background:#fff;border:0;box-shadow:0 1px 5px rgba(0,0,0,.28)}
   .fx-actions{display:flex;align-items:center;gap:10px;margin-top:10px}
   .fx-status{flex:1;text-align:center;font-size:12px;color:var(--text-3)}
-  .fx-reset,.fx-accept{min-height:34px;padding:6px 16px;border-radius:999px;font-size:13px;font-weight:650;border:1px solid var(--border)}
+  .fx-reset{min-height:34px;padding:6px 16px;border-radius:999px;font-size:13px;font-weight:650;border:1px solid var(--border)}
   .fx-reset{background:var(--surface);color:var(--text-2)}
   .fx-reset:disabled{opacity:.4;cursor:default}
-  .fx-accept{background:var(--accent);border-color:var(--accent);color:#fff}
 
   /* Fragmentos conservados dentro de la misma onda. */
   .clip-layer{position:absolute;inset:0;z-index:5;pointer-events:none;overflow:hidden;border-radius:var(--radius-m)}
@@ -446,7 +445,7 @@
       </div>
       <div>
         <h1>Recortar audio</h1>
-        <p>Corta y une audio sin salir del navegador <span class="app-version">v2.2.1</span></p>
+        <p>Corta y une audio sin salir del navegador <span class="app-version">v2.3.0</span></p>
       </div>
     </div>
 
@@ -967,6 +966,74 @@
     }
   }
 
+
+  /* ---- MP3 rápido: lamejs (~150 KB) en un Worker, sin esperar a ffmpeg (~25 MB) ---- */
+  const LAME_URLS = [
+    'https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js',
+    'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js',
+    'https://unpkg.com/lamejs@1.2.1/lame.min.js'
+  ];
+  const MP3_WORKER_CODE = "self.onmessage=function(e){var d=e.data;try{" +
+    "if(!self.lamejs){for(var i=0;i<d.urls.length&&!self.lamejs;i++){try{importScripts(d.urls[i]);}catch(err){}}}" +
+    "if(!self.lamejs)throw new Error('No se pudo cargar el codificador MP3.');" +
+    "var v=new DataView(d.wav),nch=v.getUint16(22,true),rate=v.getUint32(24,true),off=12,dataOff=0,size=0;" +
+    "while(off+8<=v.byteLength){var id=String.fromCharCode(v.getUint8(off),v.getUint8(off+1),v.getUint8(off+2),v.getUint8(off+3)),sz=v.getUint32(off+4,true);" +
+    "if(id==='data'){dataOff=off+8;size=Math.min(sz,v.byteLength-dataOff);break;}off+=8+sz+(sz&1);}" +
+    "var frames=Math.floor(size/(2*nch)),pcm=new Int16Array(d.wav,dataOff,frames*nch),outCh=nch>1?2:1;" +
+    "var L=new Int16Array(frames),R=outCh>1?new Int16Array(frames):null;" +
+    "for(var f=0;f<frames;f++){L[f]=pcm[f*nch];if(R)R[f]=pcm[f*nch+1];}" +
+    "var enc=new lamejs.Mp3Encoder(outCh,rate,d.kbps),parts=[],total=0,blk=1152,n=0;" +
+    "for(var s=0;s<frames;s+=blk){var buf=R?enc.encodeBuffer(L.subarray(s,s+blk),R.subarray(s,s+blk)):enc.encodeBuffer(L.subarray(s,s+blk));" +
+    "if(buf.length){parts.push(new Uint8Array(buf));total+=buf.length;}if(++n%300===0)self.postMessage({progress:s/frames});}" +
+    "var end=enc.flush();if(end.length){parts.push(new Uint8Array(end));total+=end.length;}" +
+    "var out=new Uint8Array(total),o=0;for(var k=0;k<parts.length;k++){out.set(parts[k],o);o+=parts[k].length;}" +
+    "self.postMessage({bytes:out},[out.buffer]);" +
+    "}catch(err){self.postMessage({error:String(err&&err.message||err)});}};";
+  let mp3WorkerURL = null;
+  function encodeMp3Wav(wavBytes, onProgress){
+    return new Promise((resolve, reject) => {
+      let worker;
+      try {
+        if (!mp3WorkerURL) mp3WorkerURL = URL.createObjectURL(new Blob([MP3_WORKER_CODE], { type: 'text/javascript' }));
+        worker = new Worker(mp3WorkerURL);
+      } catch(e){ reject(e); return; }
+      const finish = () => { clearTimeout(timer); try { worker.terminate(); } catch(e){ console.debug('Codificador ya cerrado.', e); } };
+      const timer = setTimeout(() => { finish(); reject(new Error('El codificador MP3 no respondió.')); }, 180000);
+      worker.onmessage = e => {
+        const d = e.data;
+        if (d.progress != null){ if (onProgress) onProgress(d.progress); return; }
+        finish();
+        if (d.error) reject(new Error(d.error)); else resolve(d.bytes);
+      };
+      worker.onerror = ev => { if (ev && ev.preventDefault) ev.preventDefault(); finish(); reject(new Error((ev && ev.message) || 'Error del codificador MP3.')); };
+      const copy = wavBytes.slice();
+      worker.postMessage({ urls: LAME_URLS, wav: copy.buffer, kbps: 192 }, [copy.buffer]);
+    });
+  }
+  // Codifica para descargar: MP3 con lamejs; si fallara, o para otros formatos, ffmpeg.
+  async function encodeForDownload(wavBytes, ext, status, setBar){
+    if (ext === 'wav') return wavBytes;
+    // Si ffmpeg ya terminó de cargar en segundo plano, es el más rápido para canciones largas.
+    if (ext === 'mp3' && !(ffmpeg && ffmpeg.isLoaded())){
+      try {
+        status && status('Codificando MP3…');
+        return await encodeMp3Wav(wavBytes, ratio => setBar && setBar(ratio));
+      } catch(err){
+        console.warn('Codificador MP3 rápido no disponible; se usará ffmpeg.', err);
+      }
+    }
+    const ff = await getFFmpeg(status);
+    ff.setProgress(({ ratio }) => { if (ratio >= 0 && ratio <= 1 && setBar) setBar(ratio); });
+    return await encodeEditedWav(wavBytes, ext, status);
+  }
+  // Para formatos que sí necesitan ffmpeg, se prepara en segundo plano al abrir el archivo.
+  function prewarmFFmpeg(ext){
+    if (ext === 'wav') return;
+    // MP3 no lo necesita (lamejs basta), pero si no hay ahorro de datos se carga igual para acelerar canciones largas.
+    if (ext === 'mp3' && navigator.connection && navigator.connection.saveData) return;
+    setTimeout(() => { if (!ffOperationBusy) getFFmpeg().catch(err => console.debug('No se pudo precargar ffmpeg.', err)); }, 1500);
+  }
+
   /* ============ CORTAR: estado ============ */
   let cutFile = null;        // File original
   let audioBuf = null;       // AudioBuffer decodificado (para onda y respaldo de preview)
@@ -1195,6 +1262,7 @@
     syncAll('code');
     refreshEditButtons();
     if (duration){ showCursorUI(); updatePlayheadUI(0); }
+    prewarmFFmpeg(extOf(file.name));
   }
 
   function metaDuration(el){
@@ -2163,9 +2231,6 @@
 
   /* ---- Edición con asas y navegación de teclado ---- */
   function currentProjectPosition(){ return clips.length ? sourceToProject(activeClip, posCursor) : 0; }
-  function isTypingTarget(target){
-    return !!(target && (target.matches('input,textarea,select') || target.isContentEditable || target.closest('[contenteditable="true"]')));
-  }
   function fragmentBoundaries(){
     const out=[0];
     let t=0;
@@ -2179,41 +2244,49 @@
      Espacio    reproducir / pausar        Inicio / Fin  ir al principio / al final
      ⌘/Ctrl + Z  atrás · ⌘/Ctrl + Mayús + Z  adelante */
   const FRAME_STEP = 1/30;
+  /* Los atajos tienen prioridad absoluta: funcionan aunque el foco esté en un deslizador,
+     un botón, un asa o el panel de efectos. Sólo en las casillas de tiempo (donde se escribe)
+     se reservan Borrar, Supr, flechas, Inicio y Fin para editar el número. */
+  const FIELD_EDIT_KEYS = new Set(['Backspace','Delete','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End']);
+  function isTextField(target){
+    return !!(target && target.matches && (target.matches('textarea,select,input:not([type=range]):not([type=button]):not([type=checkbox]):not([type=radio])') ||
+      target.isContentEditable || target.closest('[contenteditable="true"]')));
+  }
   function editorKeysActive(e){
     if (!duration || $('editor').hidden || !$('panelCut').classList.contains('active')) return false;
-    if (isTypingTarget(e.target)) return false;
-    if (e.target && e.target.closest && e.target.closest('#waveNavWindow,.handle,dialog,.fx-panel')) return false;
+    if (isTextField(e.target) && FIELD_EDIT_KEYS.has(e.key) && !e.metaKey && !e.ctrlKey) return false;
     return true;
   }
-  document.addEventListener('keydown', e => {
+  function stopKey(e){ e.preventDefault(); e.stopPropagation(); }
+  window.addEventListener('keydown', e => {
     if (!editorKeysActive(e)) return;
     const key = e.key, mod = e.metaKey || e.ctrlKey;
     if (mod && !e.altKey && (key === 'z' || key === 'Z')){
-      e.preventDefault();
+      stopKey(e);
       (e.shiftKey ? editRedo : editUndo).click();
       return;
     }
-    if (mod && !e.altKey && (key === 'y' || key === 'Y')){ e.preventDefault(); editRedo.click(); return; }
+    if (mod && !e.altKey && (key === 'y' || key === 'Y')){ stopKey(e); editRedo.click(); return; }
     if (mod) return;
     if (key === ' ' || key === 'Spacebar'){
-      e.preventDefault();
+      stopKey(e);
       if (e.repeat) return;
       if (playMode) pausePreview(); else startPlayback();
       return;
     }
     if (key === 'x' || key === 'X'){
       if (e.altKey) return;
-      e.preventDefault();
+      stopKey(e);
       if (!e.repeat) editCut.click();
       return;
     }
     if (key === 'Delete' || key === 'Backspace'){
-      e.preventDefault();
+      stopKey(e);
       if (!e.repeat) editDelete.click();
       return;
     }
     if (key === 'Home' || key === 'End'){
-      e.preventDefault();
+      stopKey(e);
       const target = key === 'Home' ? 0 : keptDuration();
       seekTo(target); ensureProjectTimeVisible(target);
       return;
@@ -2232,14 +2305,14 @@
         target=next==null?keptDuration():next;
       }
     }else target=clamp(now+dir*(e.shiftKey?1:FRAME_STEP),0,keptDuration());
-    e.preventDefault();
+    stopKey(e);
     seekTo(target);
     ensureProjectTimeVisible(target);
-  });
-  // Evita que Espacio también "pulse" el botón que tenga el foco (doble play/pausa).
-  document.addEventListener('keyup', e => {
-    if ((e.key === ' ' || e.key === 'Spacebar') && editorKeysActive(e) && e.target && e.target.closest && e.target.closest('button')) e.preventDefault();
-  });
+  }, true);
+  // Evita que Espacio también "pulse" el botón o control que tenga el foco (doble play/pausa).
+  window.addEventListener('keyup', e => {
+    if ((e.key === ' ' || e.key === 'Spacebar') && editorKeysActive(e)) stopKey(e);
+  }, true);
 
   function bindTrimHandle(id, side){
     const el=$(id);
@@ -2328,18 +2401,7 @@
       }else wavBytes=buildEditedWav(decoded,plan);
       bar.style.width='45%';
 
-      let data;
-      if(ext==='wav'){
-        data=wavBytes;
-        bar.style.width='96%';
-      }else{
-        const ff=await getFFmpeg(msg=>stat.textContent=msg);
-        ff.setProgress(({ratio})=>{
-          if(ratio>=0&&ratio<=1)bar.style.width=(45+Math.round(ratio*50))+'%';
-        });
-        data=await encodeEditedWav(wavBytes,ext,msg=>stat.textContent=msg);
-      }
-
+      const data=await encodeForDownload(wavBytes,ext,msg=>stat.textContent=msg,ratio=>bar.style.width=(45+Math.round(ratio*50))+'%');
       downloadBytes(data,baseOf(sourceFile.name)+' (editado).'+ext,MIMES[ext]);
       bar.style.width='100%';
       const editedDuration=plan.reduce((sum,c)=>sum+c.end-c.start,0)/exportFx.speed;
@@ -2436,17 +2498,7 @@
       const wavBytes=buildJoinedWav(buffers);
       bar.style.width='50%';
 
-      let data;
-      if(ext==='wav'){
-        data=wavBytes;
-        bar.style.width='96%';
-      }else{
-        const ff=await getFFmpeg(msg=>stat.textContent=msg);
-        ff.setProgress(({ratio})=>{
-          if(ratio>=0&&ratio<=1)bar.style.width=(50+Math.round(ratio*45))+'%';
-        });
-        data=await encodeEditedWav(wavBytes,ext,msg=>stat.textContent=msg);
-      }
+      const data=await encodeForDownload(wavBytes,ext,msg=>stat.textContent=msg,ratio=>bar.style.width=(50+Math.round(ratio*45))+'%');
 
       downloadBytes(data,baseOf(files[0].name)+' (unido).'+ext,MIMES[ext]);
       bar.style.width='100%';
@@ -2495,6 +2547,7 @@
     posCursor=clamp(snap.posCursor,clip.start,Math.max(clip.start,clip.end-.02));
     if (snap.loopMode) setLoopMode(snap.loopMode);
     if (snap.fx && !sameFx(snap.fx, fx)) setFx(snap.fx);
+    fxHistoryPushed = false;
     const total=keptDuration();
     if (total && Number.isFinite(snap.viewA) && Number.isFinite(snap.viewB)){
       const span=Math.min(Math.max(.001,snap.viewB-snap.viewA),total);
@@ -2990,11 +3043,11 @@ registerProcessor('fx-player',FxPlayer);
   fxPanel.innerHTML =
     '<div class="fx-value" id="fxValue">Original</div>' +
     '<div class="fx-slider-row"><span id="fxLeft">Grave</span><input type="range" id="fxRange" aria-label="Ajuste"><span id="fxRight">Agudo</span></div>' +
-    '<div class="fx-actions"><button type="button" class="fx-reset" id="fxReset">Original</button><span class="fx-status" id="fxStatus" aria-live="polite"></span><button type="button" class="fx-accept" id="fxAccept">Aceptar</button></div>';
+    '<div class="fx-actions"><button type="button" class="fx-reset" id="fxReset">Original</button><span class="fx-status" id="fxStatus" aria-live="polite"></span></div>';
   editorTools.insertAdjacentElement('afterend', fxBar);
   fxBar.insertAdjacentElement('afterend', fxPanel);
   const fxRange = $('fxRange');
-  let fxOpen = null, fxOpenSnapshot = null;
+  let fxOpen = null, fxOpenSnapshot = null, fxHistoryPushed = false;
 
   function refreshFxButtons(){
     const disabled = exportBusy || !audioBuf;
@@ -3037,6 +3090,8 @@ registerProcessor('fx-player',FxPlayer);
     value = clamp(Math.round(value / ui.step) * ui.step, ui.min, ui.max);
     value = Math.round(value * 100) / 100;
     if (value === fx[key]) return;
+    // Sin botón Aceptar: el primer movimiento del deslizador ya queda en el historial (⌘Z lo deshace).
+    if (!fxHistoryPushed){ pushEditorHistory(editorSnapshot()); fxHistoryPushed = true; }
     setFx({ ...fx, [key]: value });
   }
   function openFxPanel(key){
@@ -3045,6 +3100,7 @@ registerProcessor('fx-player',FxPlayer);
     const ui = FX_UI[key];
     fxOpen = key;
     fxOpenSnapshot = editorSnapshot();
+    fxHistoryPushed = false;
     ensureFxEngine();
     fxRange.min = String(ui.min); fxRange.max = String(ui.max); fxRange.step = String(ui.step);
     fxRange.value = String(fx[key]);
@@ -3057,7 +3113,6 @@ registerProcessor('fx-player',FxPlayer);
   }
   function closeFxPanel(){
     if (!fxOpen) return;
-    if (fxOpenSnapshot && fxOpenSnapshot.fx && !sameFx(fxOpenSnapshot.fx, fx)) pushEditorHistory(fxOpenSnapshot);
     fxOpen = null; fxOpenSnapshot = null;
     fxPanel.hidden = true;
     refreshFxButtons();
@@ -3079,7 +3134,6 @@ registerProcessor('fx-player',FxPlayer);
   });
   fxRange.addEventListener('input', () => { if (fxOpen) setFxValue(fxOpen, parseFloat(fxRange.value)); });
   $('fxReset').addEventListener('click', () => { if (fxOpen){ setFxValue(fxOpen, FX_DEFAULT[fxOpen]); fxRange.value = String(fx[fxOpen]); } });
-  $('fxAccept').addEventListener('click', closeFxPanel);
   fxUiReady = true;
   fxPanel.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === 'Escape'){ e.preventDefault(); closeFxPanel(); } });
   refreshFxButtons();
