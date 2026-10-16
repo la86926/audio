@@ -4,9 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Splitter MP3 — Corta y une audio en tu navegador</title>
-<meta name="version" content="2.0.3">
+<meta name="version" content="2.1.0">
 <meta name="description" content="Corta y une archivos de audio (MP3, WAV, M4A, FLAC y más) directamente en tu navegador. Sin subir nada a ningún servidor.">
-<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%23E4640B"/><g stroke="white" stroke-width="4" stroke-linecap="round"><line x1="14" y1="26" x2="14" y2="38"/><line x1="23" y1="18" x2="23" y2="46"/><line x1="32" y1="12" x2="32" y2="52"/><line x1="41" y1="20" x2="41" y2="44"/><line x1="50" y1="27" x2="50" y2="37"/></g></svg>'>
+<link rel="icon" type="image/svg+xml" href="./logo.svg?v=2.1.0">
+<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=2.1.0">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=2.1.0">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=2.1.0">
+<meta name="apple-mobile-web-app-title" content="Recortar audio">
 <style>
   /* ---------- Tokens ---------- */
   :root{
@@ -77,12 +81,10 @@
   }
   .brand{ display:flex; align-items:center; gap:13px; }
   .brand-icon{
-    width:44px; height:44px; border-radius:11px; flex:none;
-    background:linear-gradient(160deg, var(--accent), var(--accent-strong));
-    display:grid; place-items:center;
-    box-shadow:0 4px 14px rgba(228,100,11,.32);
+    width:44px; height:44px; flex:none;
+    filter:drop-shadow(0 4px 10px rgba(208,89,12,.30));
   }
-  .brand-icon svg{ display:block; }
+  .brand-icon svg{ display:block; width:100%; height:100%; }
   .brand h1{ font-size:21px; font-weight:700; letter-spacing:-.02em; }
   .brand p{ font-size:12.5px; color:var(--text-2); margin-top:1px; }
   .app-version{ margin-left:6px; font-size:11px; opacity:.6; font-variant-numeric:tabular-nums; }
@@ -382,6 +384,34 @@
   .editor-tool:disabled{opacity:.35;cursor:default;transform:none}
   .editor-tool.danger{color:#d34b3f}
   .editor-tool svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  #editCut{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 4px 12px rgba(228,100,11,.30)}
+  #editCut:hover{background:var(--accent-strong);color:#fff}
+  #editCut svg{width:22px;height:26px}
+  .fx-bar{display:flex;justify-content:center;gap:8px;margin:12px 0 2px;flex-wrap:wrap}
+  .fx-btn{display:inline-flex;align-items:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border);border-radius:999px;background:var(--surface-2);color:var(--text-2);font-size:13px;font-weight:600;transition:background var(--dur) ease,color var(--dur) ease,border-color var(--dur) ease,transform .15s ease}
+  .fx-btn:hover{color:var(--text);transform:translateY(-1px)}
+  .fx-btn:disabled{opacity:.35;transform:none;cursor:default}
+  .fx-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .fx-btn.changed{color:var(--accent-strong);border-color:var(--accent-soft);background:var(--accent-soft)}
+  .fx-btn[aria-expanded="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+  .fx-chip{font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums}
+  .fx-bar.busy .fx-btn.changed .fx-chip{opacity:.5}
+  .fx-panel{margin:10px auto 0;max-width:460px;padding:14px 16px 12px;border-radius:var(--radius-m);background:var(--surface-2);border:1px solid var(--border)}
+  .fx-value{text-align:center;font-size:17px;font-weight:650;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .fx-slider-row{display:flex;align-items:center;gap:10px;margin-top:8px}
+  .fx-slider-row span{font-size:11.5px;font-weight:600;color:var(--text-3);flex:none;min-width:44px}
+  .fx-slider-row span:last-child{text-align:right}
+  #fxRange{flex:1;min-width:0;height:30px;margin:0;background:transparent;-webkit-appearance:none;appearance:none;touch-action:pan-y}
+  #fxRange::-webkit-slider-runnable-track{height:6px;border-radius:999px;background:linear-gradient(90deg,var(--accent) 0 var(--fill,50%),var(--border) var(--fill,50%) 100%)}
+  #fxRange::-moz-range-track{height:6px;border-radius:999px;background:linear-gradient(90deg,var(--accent) 0 var(--fill,50%),var(--border) var(--fill,50%) 100%)}
+  #fxRange::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;margin-top:-9px;border-radius:50%;background:#fff;border:0;box-shadow:0 1px 5px rgba(0,0,0,.28)}
+  #fxRange::-moz-range-thumb{width:24px;height:24px;border-radius:50%;background:#fff;border:0;box-shadow:0 1px 5px rgba(0,0,0,.28)}
+  .fx-actions{display:flex;align-items:center;gap:10px;margin-top:10px}
+  .fx-status{flex:1;text-align:center;font-size:12px;color:var(--text-3)}
+  .fx-reset,.fx-accept{min-height:34px;padding:6px 16px;border-radius:999px;font-size:13px;font-weight:650;border:1px solid var(--border)}
+  .fx-reset{background:var(--surface);color:var(--text-2)}
+  .fx-reset:disabled{opacity:.4;cursor:default}
+  .fx-accept{background:var(--accent);border-color:var(--accent);color:#fff}
 
   /* Fragmentos conservados dentro de la misma onda. */
   .clip-layer{position:absolute;inset:0;z-index:5;pointer-events:none;overflow:hidden;border-radius:var(--radius-m)}
@@ -407,17 +437,11 @@
   <header>
     <div class="brand">
       <div class="brand-icon" aria-hidden="true">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round">
-          <line x1="4"  y1="9.5" x2="4"  y2="14.5"/>
-          <line x1="8"  y1="6.5" x2="8"  y2="17.5"/>
-          <line x1="12" y1="4"   x2="12" y2="20"/>
-          <line x1="16" y1="7.5" x2="16" y2="16.5"/>
-          <line x1="20" y1="10"  x2="20" y2="14"/>
-        </svg>
+        <svg viewBox="0 0 256 256"><rect width="256" height="256" rx="60" fill="#D0590C"/><path d="M31.5 117v21M63.5 96v63M95.5 43v169M127.5 75v105M159.5 107v41M191.5 85v85M223.5 117v21" stroke="#fff" stroke-width="10" stroke-linecap="round"/></svg>
       </div>
       <div>
         <h1>Recortar audio</h1>
-        <p>Corta y une audio sin salir del navegador <span class="app-version">v2.0.3</span></p>
+        <p>Corta y une audio sin salir del navegador <span class="app-version">v2.1.0</span></p>
       </div>
     </div>
 
@@ -953,6 +977,10 @@
   let previewEl = null, previewURL = null, playMode = null; // 'el' (elemento <audio>) | 'wa' (Web Audio)
   let loopMode = 'none', playbackLoopClip = 0, playbackReachedEnd = false;
   let cutLoadToken = 0, exportBusy = false, ffOperationBusy = false;
+  const FX_DEFAULT = { pitch: 0, speed: 1, volume: 1 };
+  let fx = { ...FX_DEFAULT };      // tono (semitonos), velocidad (×), volumen (×)
+  let fxReady = null;              // { pitch, speed, buf } audio ya procesado para reproducir
+  let fxGain = null, playRate = 1, playingBuf = null, fxUiReady = false;
 
   const waveBox = $('waveBox'), canvas = $('waveCanvas'), ctx2d = canvas.getContext('2d');
   const HANDLE_W = 22, MIN_GAP = 0.1;
@@ -1023,7 +1051,7 @@
     };
   }
   function editorSnapshot(){
-    return { clips: clips.map(clip => ({...clip})), activeClip, posCursor, viewA, viewB, loopMode };
+    return { clips: clips.map(clip => ({...clip})), activeClip, posCursor, viewA, viewB, loopMode, fx: { ...fx } };
   }
   function touchEditorSnapshot(){
     return editorSnapshot();
@@ -1146,6 +1174,7 @@
     clips = duration ? [newClip(0, duration)] : [];
     activeClip = 0;
     playbackReachedEnd = false;
+    resetFxForNewFile();
     setLoopMode('none');
     undoSelections.length = 0;
     redoSelections.length = 0;
@@ -1311,7 +1340,7 @@
       const projectTime = viewA + ((i + 0.5) / n) * span;
       const located = locateProjectTime(projectTime);
       const peakIndex = located && duration ? clamp(Math.floor((located.sourceTime / duration) * dispPeaks.length), 0, dispPeaks.length - 1) : i;
-      const amp = Math.max(0.025, dispPeaks[peakIndex] || 0) * (H * 0.42);
+      const amp = Math.min(H * 0.49, Math.max(0.025, (dispPeaks[peakIndex] || 0) * fx.volume) * (H * 0.42));
       const clipIndex = located ? located.index : -1;
       ctx2d.fillStyle = clipIndex >= 0 ? acc : idle;
       ctx2d.globalAlpha = clipIndex === activeClip ? 1 : clipIndex >= 0 ? .55 : .42;
@@ -1769,7 +1798,7 @@
   /* ---- Reproducción ---- */
   function currentPos(){
     if (playMode === 'el') return previewEl.currentTime;
-    if (playMode === 'wa') return playFrom + (audioCtx.currentTime - playT0);
+    if (playMode === 'wa') return playFrom + (audioCtx.currentTime - playT0) * playRate;
     return posCursor;
   }
   function showCursorUI(){
@@ -1842,11 +1871,14 @@
   function startWA(from){
     const clip = currentClip();
     if (!clip) return;
+    const out = fxPlaybackSource();
     const src = audioCtx.createBufferSource();
-    src.buffer = audioBuf;
-    src.connect(audioCtx.destination);
-    src.start(0, from, Math.max(0.01, clip.end - from));
-    playingSrc = src; playT0 = audioCtx.currentTime; playFrom = from; playMode = 'wa';
+    src.buffer = out.buf;
+    src.connect(fxOutputNode());
+    const offset = Math.min(Math.max(0, from / out.speed), Math.max(0, out.buf.duration - 0.01));
+    src.start(0, offset, Math.max(0.01, (clip.end - from) / out.speed));
+    playingSrc = src; playingBuf = out.buf; playRate = out.speed;
+    playT0 = audioCtx.currentTime; playFrom = from; playMode = 'wa';
     src.onended = () => {
       if (playingSrc !== src || playMode !== 'wa') return;
       playingSrc = null;
@@ -1916,7 +1948,9 @@
 
     // 1) Elemento <audio>: reproduce aunque el dispositivo esté en modo silencio (iPhone/iPad)
     let started = false;
-    if (previewEl && previewURL){
+    const useFx = fxActive() && !!audioBuf;
+    if (useFx) prepareAudioSession();
+    if (previewEl && previewURL && !useFx){
       try {
         if (previewEl.readyState < 1) await metaDuration(previewEl);
         previewEl.currentTime = from;
@@ -2003,20 +2037,60 @@
   function isTypingTarget(target){
     return !!(target && (target.matches('input,textarea,select') || target.isContentEditable || target.closest('[contenteditable="true"]')));
   }
-  function keyboardCursorStep(){
-    return Math.min(1, Math.max(.05, viewSpan() / 90));
-  }
   function fragmentBoundaries(){
     const out=[0];
     let t=0;
     clips.forEach(clip => { t += Math.max(0,clip.end-clip.start); out.push(t); });
     return out;
   }
+  /* Atajos clásicos de teclado (sólo en ordenador; no actúan mientras se escribe):
+     ← →        un fotograma (1/30 s)      Mayús + ← →  un segundo
+     Opción + ← →  saltar al borde del fragmento anterior / siguiente
+     X          recortar en el cursor      Borrar / Supr  eliminar el fragmento del cursor
+     Espacio    reproducir / pausar        Inicio / Fin  ir al principio / al final
+     ⌘/Ctrl + Z  atrás · ⌘/Ctrl + Mayús + Z  adelante */
+  const FRAME_STEP = 1/30;
+  function editorKeysActive(e){
+    if (!duration || $('editor').hidden || !$('panelCut').classList.contains('active')) return false;
+    if (isTypingTarget(e.target)) return false;
+    if (e.target && e.target.closest && e.target.closest('#waveNavWindow,.handle,dialog,.fx-panel')) return false;
+    return true;
+  }
   document.addEventListener('keydown', e => {
-    if (!duration || $('editor').hidden || isTypingTarget(e.target)) return;
-    if (e.target && e.target.closest && e.target.closest('#waveNavWindow,.handle')) return;
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    const dir=e.key==='ArrowLeft'?-1:1;
+    if (!editorKeysActive(e)) return;
+    const key = e.key, mod = e.metaKey || e.ctrlKey;
+    if (mod && !e.altKey && (key === 'z' || key === 'Z')){
+      e.preventDefault();
+      (e.shiftKey ? editRedo : editUndo).click();
+      return;
+    }
+    if (mod && !e.altKey && (key === 'y' || key === 'Y')){ e.preventDefault(); editRedo.click(); return; }
+    if (mod) return;
+    if (key === ' ' || key === 'Spacebar'){
+      e.preventDefault();
+      if (e.repeat) return;
+      if (playMode) pausePreview(); else startPlayback();
+      return;
+    }
+    if (key === 'x' || key === 'X'){
+      if (e.altKey) return;
+      e.preventDefault();
+      if (!e.repeat) editCut.click();
+      return;
+    }
+    if (key === 'Delete' || key === 'Backspace'){
+      e.preventDefault();
+      if (!e.repeat) editDelete.click();
+      return;
+    }
+    if (key === 'Home' || key === 'End'){
+      e.preventDefault();
+      const target = key === 'Home' ? 0 : keptDuration();
+      seekTo(target); ensureProjectTimeVisible(target);
+      return;
+    }
+    if (key !== 'ArrowLeft' && key !== 'ArrowRight') return;
+    const dir=key==='ArrowLeft'?-1:1;
     const now=currentProjectPosition();
     let target;
     if (e.altKey){
@@ -2028,10 +2102,14 @@
         const next=points.find(t=>t>now+eps);
         target=next==null?keptDuration():next;
       }
-    }else target=clamp(now+dir*keyboardCursorStep(),0,keptDuration());
+    }else target=clamp(now+dir*(e.shiftKey?1:FRAME_STEP),0,keptDuration());
     e.preventDefault();
     seekTo(target);
     ensureProjectTimeVisible(target);
+  });
+  // Evita que Espacio también "pulse" el botón que tenga el foco (doble play/pausa).
+  document.addEventListener('keyup', e => {
+    if ((e.key === ' ' || e.key === 'Spacebar') && editorKeysActive(e) && e.target && e.target.closest && e.target.closest('button')) e.preventDefault();
   });
 
   function bindTrimHandle(id, side){
@@ -2110,7 +2188,13 @@
     try{
       stat.textContent='Preparando la edición…';
       const decoded=await decodeForExport(sourceFile,msg=>stat.textContent=msg);
-      const wavBytes=buildEditedWav(decoded,plan);
+      const exportFx={...fx};
+      let wavBytes;
+      if(fxActive()){
+        stat.textContent='Aplicando tono, velocidad y volumen…';
+        bar.style.width='15%';
+        wavBytes=await buildFxWav(decoded,plan,exportFx);
+      }else wavBytes=buildEditedWav(decoded,plan);
       bar.style.width='45%';
 
       let data;
@@ -2127,7 +2211,7 @@
 
       downloadBytes(data,baseOf(sourceFile.name)+' (editado).'+ext,MIMES[ext]);
       bar.style.width='100%';
-      const editedDuration=plan.reduce((sum,c)=>sum+c.end-c.start,0);
+      const editedDuration=plan.reduce((sum,c)=>sum+c.end-c.start,0)/exportFx.speed;
       stat.textContent='Listo: se descargó un solo audio con '+plan.length+(plan.length===1?' fragmento':' fragmentos')+' ('+fmtTime(editedDuration,true)+').';
     }catch(err){
       console.error('Error al exportar el audio editado:',err,ffLogTail);
@@ -2257,8 +2341,8 @@
   editorTools.innerHTML='\
   <button class="editor-tool" id="editUndo" title="Atrás" aria-label="Atrás"><svg viewBox="0 0 24 24"><path d="M9 7 4 12l5 5"/><path d="M4 12h9a6 6 0 0 1 6 6"/></svg></button>\
   <button class="editor-tool" id="editRedo" title="Adelante" aria-label="Adelante"><svg viewBox="0 0 24 24"><path d="m15 7 5 5-5 5"/><path d="M20 12h-9a6 6 0 0 0-6 6"/></svg></button>\
-  <button class="editor-tool" id="editCut" title="Recortar en el cursor" aria-label="Recortar en el cursor"><svg viewBox="0 0 24 24"><circle cx="6" cy="7" r="3"/><circle cx="6" cy="17" r="3"/><path d="m8.7 8.4 10.3 6.2M8.7 15.6 19 9.4"/></svg></button>\
-  <button class="editor-tool danger" id="editDelete" title="Eliminar fragmento" aria-label="Eliminar fragmento"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg></button>';
+  <button class="editor-tool" id="editCut" title="Recortar en el cursor (X)" aria-label="Recortar en el cursor"><svg viewBox="2 1 20 31.6"><g transform="translate(24 0) rotate(90)"><circle cx="5" cy="6" r="3"/><circle cx="5" cy="18" r="3"/><path d="M7.6 7.5 21 18M7.6 16.5 21 6M11.5 12l-4 3.2"/></g><path d="M12 24.4h.01M12 27.4h.01M12 30.4h.01" stroke-width="2.4"/></svg></button>\
+  <button class="editor-tool danger" id="editDelete" title="Eliminar fragmento (Borrar)" aria-label="Eliminar fragmento"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg></button>';
   document.querySelector('.transport').insertAdjacentElement('afterend',editorTools);
 
   const editUndo=$('editUndo'),editRedo=$('editRedo'),editCut=$('editCut'),editDelete=$('editDelete');
@@ -2267,6 +2351,7 @@
     editRedo.disabled=exportBusy||!redoSelections.length;
     editCut.disabled=exportBusy||!clips.length;
     editDelete.disabled=exportBusy||clips.length<=1;
+    if(fxUiReady)refreshFxButtons();
   }
   function applyEditorSnapshot(snap){
     if(!snap||!snap.clips||!snap.clips.length)return;
@@ -2278,6 +2363,7 @@
     selStart=clip.start;selEnd=clip.end;
     posCursor=clamp(snap.posCursor,clip.start,Math.max(clip.start,clip.end-.02));
     if (snap.loopMode) setLoopMode(snap.loopMode);
+    if (snap.fx && !sameFx(snap.fx, fx)) setFx(snap.fx);
     const total=keptDuration();
     if (total && Number.isFinite(snap.viewA) && Number.isFinite(snap.viewB)){
       const span=Math.min(Math.max(.001,snap.viewB-snap.viewA),total);
@@ -2325,6 +2411,342 @@
     preserveViewAfterDelete(oldViewA,oldViewB,deleted.start,deleted.end);
     syncAll('delete');showCursorUI();updatePlayheadUI(posCursor);refreshEditButtons();
   });
+
+  /* ============ Efectos: tono, velocidad y volumen ============ */
+  /* Procesado (se ejecuta dentro de un Web Worker): WSOLA para cambiar la duración
+     sin alterar el tono + remuestreo para mover el tono.
+     Resultado: tono × 2^(semitonos/12) y duración ÷ velocidad, ambos independientes. */
+  function fxProcess(channels, rate, semitones, speed){
+    const pitch = Math.pow(2, semitones / 12);
+    const stretch = pitch / speed;
+    const inLen = channels[0].length;
+    let work = channels;
+    if (Math.abs(stretch - 1) > 1e-4 && inLen > 0){
+      let N = 1; while (N < rate * 0.046) N <<= 1;
+      const Hs = N >> 1, Ha = Hs / stretch, D = N >> 2, L = N >> 1;
+      const win = new Float32Array(N);
+      for (let n = 0; n < N; n++) win[n] = 0.5 - 0.5 * Math.cos(2 * Math.PI * n / N);
+      const mono = new Float32Array(inLen);
+      for (const ch of channels) for (let i = 0; i < inLen; i++) mono[i] += ch[i] / channels.length;
+      const outLen = Math.max(1, Math.ceil(inLen * stretch));
+      const out = channels.map(() => new Float32Array(outLen + N));
+      const at = i => (i >= 0 && i < inLen ? mono[i] : 0);
+      const score = (cand, natural, stride) => {
+        let dot = 0, energy = 1e-9;
+        for (let n = 0; n < L; n += stride){ const b = at(cand + n); dot += at(natural + n) * b; energy += b * b; }
+        return dot / Math.sqrt(energy);
+      };
+      let prev = 0;
+      for (let k = 0; ; k++){
+        const outPos = k * Hs;
+        if (outPos >= outLen) break;
+        let best = Math.round(k * Ha);
+        if (k > 0){
+          const natural = prev + Hs, nominal = Math.round(k * Ha);
+          let bestScore = -Infinity;
+          for (let d = -D; d <= D; d += 8){
+            const c = nominal + d; if (c < 0) continue;
+            const v = score(c, natural, 8); if (v > bestScore){ bestScore = v; best = c; }
+          }
+          const coarse = best; bestScore = -Infinity;
+          for (let d = -7; d <= 7; d++){
+            const c = coarse + d; if (c < 0) continue;
+            const v = score(c, natural, 2); if (v > bestScore){ bestScore = v; best = c; }
+          }
+        }
+        for (let c = 0; c < channels.length; c++){
+          const src = channels[c], dst = out[c];
+          for (let n = 0; n < N; n++){
+            const i = best + n;
+            if (i >= inLen) break;
+            dst[outPos + n] += src[i] * win[n];
+          }
+        }
+        prev = best;
+      }
+      work = out.map(ch => ch.subarray(0, outLen));
+    }
+    if (Math.abs(pitch - 1) > 1e-4){
+      const len = work[0].length, outLen = Math.max(1, Math.floor(len / pitch));
+      work = work.map(src => {
+        const dst = new Float32Array(outLen);
+        for (let i = 0; i < outLen; i++){
+          const pos = i * pitch, i0 = Math.floor(pos), i1 = Math.min(len - 1, i0 + 1), f = pos - i0;
+          dst[i] = (src[i0] || 0) + ((src[i1] || 0) - (src[i0] || 0)) * f;
+        }
+        return dst;
+      });
+    }
+    return work.map(ch => (ch.buffer.byteLength === ch.length * 4 && ch.byteOffset === 0 ? ch : ch.slice()));
+  }
+
+  let fxWorker = null, fxWorkerBusy = null, fxJobSerial = 0;
+  function fxWorkerInstance(){
+    if (fxWorker) return fxWorker;
+    try {
+      const code = 'const fxProcess=' + fxProcess.toString() + ';self.onmessage=e=>{const d=e.data;' +
+        'try{const out=fxProcess(d.channels,d.rate,d.semitones,d.speed);self.postMessage({id:d.id,channels:out},out.map(c=>c.buffer));}' +
+        'catch(err){self.postMessage({id:d.id,error:String(err&&err.message||err)});}};';
+      const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+      fxWorker = new Worker(url);
+      URL.revokeObjectURL(url);
+    } catch(e){
+      console.warn('Web Worker no disponible; los efectos se procesarán en la página.', e);
+      fxWorker = null;
+    }
+    return fxWorker;
+  }
+  // Procesa canales sin bloquear la página; un trabajo nuevo cancela al anterior.
+  function runFxJob(channels, rate, semitones, speed){
+    const id = ++fxJobSerial;
+    const worker = fxWorkerInstance();
+    if (!worker){
+      return new Promise(resolve => setTimeout(() => resolve(fxProcess(channels, rate, semitones, speed)), 0));
+    }
+    if (fxWorkerBusy){ fxWorkerBusy.reject(new Error('cancelado')); worker.terminate(); fxWorker = null; return runFxJob(channels, rate, semitones, speed); }
+    return new Promise((resolve, reject) => {
+      fxWorkerBusy = { id, reject };
+      worker.onmessage = e => {
+        if (e.data.id !== id) return;
+        fxWorkerBusy = null;
+        if (e.data.error) reject(new Error(e.data.error)); else resolve(e.data.channels);
+      };
+      worker.onerror = err => { fxWorkerBusy = null; reject(err); };
+      worker.postMessage({ id, channels, rate, semitones, speed }, channels.map(c => c.buffer));
+    });
+  }
+  function bufferChannelsCopy(buffer){
+    return Array.from({ length: buffer.numberOfChannels }, (_, ch) => buffer.getChannelData(ch).slice());
+  }
+  function channelsToBuffer(channels, rate){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!audioCtx) audioCtx = new AC();
+    const out = audioCtx.createBuffer(channels.length, Math.max(1, channels[0].length), rate);
+    channels.forEach((data, ch) => out.getChannelData(ch).set(data.subarray(0, out.length)));
+    return out;
+  }
+  function wavFromChannels(channels, rate, gain){
+    const count = channels.length, frames = channels[0].length;
+    const blockAlign = count * 2, dataSize = frames * blockAlign;
+    if (dataSize > 0xffffffff - 44) throw new Error('El audio editado es demasiado grande para el WAV intermedio.');
+    const out = new ArrayBuffer(44 + dataSize), view = new DataView(out);
+    writeAscii(view,0,'RIFF'); view.setUint32(4,36+dataSize,true); writeAscii(view,8,'WAVE');
+    writeAscii(view,12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true);
+    view.setUint16(22,count,true); view.setUint32(24,rate,true);
+    view.setUint32(28,rate*blockAlign,true); view.setUint16(32,blockAlign,true); view.setUint16(34,16,true);
+    writeAscii(view,36,'data'); view.setUint32(40,dataSize,true);
+    let offset = 44;
+    for (let i = 0; i < frames; i++){
+      for (let ch = 0; ch < count; ch++){
+        const sample = clamp((channels[ch][i] || 0) * gain, -1, 1);
+        view.setInt16(offset, sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff), true);
+        offset += 2;
+      }
+    }
+    return new Uint8Array(out);
+  }
+  // Exportación: une los fragmentos y luego aplica tono, velocidad y volumen.
+  async function buildFxWav(buffer, plan, settings){
+    const rate = buffer.sampleRate, count = Math.max(1, buffer.numberOfChannels);
+    const ranges = plan.map(clip => {
+      const start = clamp(Math.round(clip.start * rate), 0, buffer.length);
+      const end = clamp(Math.round(clip.end * rate), start, buffer.length);
+      return { start, end };
+    }).filter(r => r.end > r.start);
+    const frames = ranges.reduce((sum, r) => sum + r.end - r.start, 0);
+    if (!frames) throw new Error('La edición no contiene muestras de audio.');
+    let channels = Array.from({ length: count }, (_, ch) => {
+      const src = buffer.getChannelData(ch), dst = new Float32Array(frames);
+      let offset = 0;
+      ranges.forEach(r => { dst.set(src.subarray(r.start, r.end), offset); offset += r.end - r.start; });
+      return dst;
+    });
+    if (settings.pitch !== 0 || settings.speed !== 1){
+      channels = await runFxJob(channels, rate, settings.pitch, settings.speed);
+      scheduleFxRender(0); // por si la exportación interrumpió el procesado para reproducir
+    }
+    return wavFromChannels(channels, rate, settings.volume);
+  }
+
+  function sameFx(a, b){ return a.pitch === b.pitch && a.speed === b.speed && a.volume === b.volume; }
+  function fxActive(){ return !sameFx(fx, FX_DEFAULT); }
+  function fxNeedsRender(){ return fx.pitch !== 0 || fx.speed !== 1; }
+  function fxOutputNode(){
+    if (!fxGain || fxGain.context !== audioCtx){
+      fxGain = audioCtx.createGain();
+      fxGain.connect(audioCtx.destination);
+    }
+    fxGain.gain.value = fx.volume;
+    return fxGain;
+  }
+  function fxPlaybackSource(){
+    if (fxNeedsRender() && fxReady) return { buf: fxReady.buf, speed: fxReady.speed };
+    return { buf: audioBuf, speed: 1 };
+  }
+  // iPhone/iPad: permite oír Web Audio aunque el interruptor de silencio esté activo.
+  function prepareAudioSession(){
+    try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; }
+    catch(e){ console.debug('No se pudo ajustar la sesión de audio.', e); }
+  }
+
+  let fxRenderTimer = 0;
+  function scheduleFxRender(delay = 220){
+    clearTimeout(fxRenderTimer);
+    if (!audioBuf || !fxNeedsRender()){ updateFxStatus(); return; }
+    if (fxReady && fxReady.pitch === fx.pitch && fxReady.speed === fx.speed){ updateFxStatus(); return; }
+    updateFxStatus(true);
+    fxRenderTimer = setTimeout(async () => {
+      if (exportBusy){ scheduleFxRender(500); return; }
+      const want = { pitch: fx.pitch, speed: fx.speed }, source = audioBuf;
+      try {
+        const channels = await runFxJob(bufferChannelsCopy(source), source.sampleRate, want.pitch, want.speed);
+        if (source !== audioBuf || want.pitch !== fx.pitch || want.speed !== fx.speed) return;
+        fxReady = { pitch: want.pitch, speed: want.speed, buf: channelsToBuffer(channels, source.sampleRate) };
+        updateFxStatus();
+        syncFxPlayback();
+      } catch(err){
+        if (err && err.message === 'cancelado') return;
+        console.error('No se pudo aplicar el efecto:', err);
+        updateFxStatus(false, 'No se pudo aplicar el efecto.');
+      }
+    }, delay);
+  }
+
+  // Si suena algo, continúa desde el mismo punto con los ajustes nuevos.
+  function syncFxPlayback(){
+    if (fxGain) fxGain.gain.value = fx.volume;
+    if (!playMode || !audioBuf) return;
+    if (playMode === 'el'){
+      if (!fxActive()) return;                       // sin efectos, el <audio> sigue igual
+    } else if (playingBuf === fxPlaybackSource().buf) return; // sólo cambió el volumen
+    const t = clamp(currentPos(), selStart, selEnd);
+    if (playMode === 'el'){ try { previewEl.pause(); } catch(e){ console.debug('No se pudo pausar el audio.', e); } }
+    else { const src = playingSrc; playingSrc = null; if (src){ try { src.stop(); } catch(e){ console.debug('La fuente ya estaba detenida.', e); } } }
+    posCursor = t;
+    prepareAudioSession();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    startWA(t);
+    startPlaybackTicker();
+  }
+
+  /* ---- Interfaz: botón → deslizador → Aceptar ---- */
+  const FX_UI = {
+    pitch:  { label:'Tono', min:-12, max:12, step:1, left:'Grave', right:'Agudo',
+              chip:v => (v > 0 ? '+' : '') + v, text:v => v === 0 ? 'Original' : (v > 0 ? '+' : '') + v + (Math.abs(v) === 1 ? ' semitono' : ' semitonos'),
+              icon:'<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>' },
+    speed:  { label:'Velocidad', min:0.5, max:2, step:0.05, left:'Lenta', right:'Rápida',
+              chip:v => v.toFixed(2).replace(/0$/,'') + '×', text:v => v === 1 ? 'Original' : v.toFixed(2).replace(/0$/,'') + '×',
+              icon:'<path d="M12 13 16.5 8.5"/><path d="M4.2 17a9 9 0 1 1 15.6 0"/><circle cx="12" cy="13" r="1.4"/>' },
+    volume: { label:'Volumen', min:0, max:2, step:0.05, left:'Bajo', right:'Alto',
+              chip:v => Math.round(v * 100) + '%', text:v => v === 1 ? 'Original' : Math.round(v * 100) + '%',
+              icon:'<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4.5 4.5 0 0 1 0 6M18.3 6.5a8 8 0 0 1 0 11"/>' }
+  };
+  const fxBar = document.createElement('div');
+  fxBar.className = 'fx-bar';
+  fxBar.setAttribute('role', 'group');
+  fxBar.setAttribute('aria-label', 'Efectos');
+  fxBar.innerHTML = Object.entries(FX_UI).map(([key, ui]) =>
+    '<button type="button" class="fx-btn" data-fx="' + key + '" aria-expanded="false">' +
+    '<svg viewBox="0 0 24 24" aria-hidden="true">' + ui.icon + '</svg><span>' + ui.label + '</span><b class="fx-chip" hidden></b></button>').join('');
+  const fxPanel = document.createElement('div');
+  fxPanel.className = 'fx-panel';
+  fxPanel.hidden = true;
+  fxPanel.innerHTML =
+    '<div class="fx-value" id="fxValue">Original</div>' +
+    '<div class="fx-slider-row"><span id="fxLeft">Grave</span><input type="range" id="fxRange" aria-label="Ajuste"><span id="fxRight">Agudo</span></div>' +
+    '<div class="fx-actions"><button type="button" class="fx-reset" id="fxReset">Original</button><span class="fx-status" id="fxStatus" aria-live="polite"></span><button type="button" class="fx-accept" id="fxAccept">Aceptar</button></div>';
+  editorTools.insertAdjacentElement('afterend', fxBar);
+  fxBar.insertAdjacentElement('afterend', fxPanel);
+  const fxRange = $('fxRange');
+  let fxOpen = null, fxOpenSnapshot = null;
+
+  function refreshFxButtons(){
+    const disabled = exportBusy || !audioBuf;
+    fxBar.querySelectorAll('.fx-btn').forEach(button => {
+      const key = button.dataset.fx, value = fx[key], changed = value !== FX_DEFAULT[key];
+      button.disabled = disabled;
+      button.classList.toggle('changed', changed);
+      button.setAttribute('aria-expanded', String(fxOpen === key));
+      const chip = button.querySelector('.fx-chip');
+      chip.hidden = !changed;
+      chip.textContent = changed ? FX_UI[key].chip(value) : '';
+    });
+    if (disabled && fxOpen) closeFxPanel();
+  }
+  function updateFxStatus(busy, message){
+    const status = $('fxStatus');
+    if (status) status.textContent = message || (busy ? 'Aplicando…' : '');
+    fxBar.classList.toggle('busy', !!busy);
+  }
+  function updateFxPanel(){
+    if (!fxOpen) return;
+    const ui = FX_UI[fxOpen], value = fx[fxOpen];
+    $('fxValue').textContent = ui.text(value);
+    $('fxReset').disabled = value === FX_DEFAULT[fxOpen];
+    const pct = (value - ui.min) / (ui.max - ui.min) * 100;
+    fxRange.style.setProperty('--fill', pct + '%');
+  }
+  function setFx(next){
+    const renderChanged = next.pitch !== fx.pitch || next.speed !== fx.speed;
+    fx = { pitch: next.pitch, speed: next.speed, volume: next.volume };
+    if (fxOpen) fxRange.value = String(fx[fxOpen]);
+    updateFxPanel();
+    refreshFxButtons();
+    drawWave();
+    if (renderChanged) scheduleFxRender();
+    syncFxPlayback();
+  }
+  function setFxValue(key, value){
+    const ui = FX_UI[key];
+    value = clamp(Math.round(value / ui.step) * ui.step, ui.min, ui.max);
+    value = Math.round(value * 100) / 100;
+    if (value === fx[key]) return;
+    setFx({ ...fx, [key]: value });
+  }
+  function openFxPanel(key){
+    if (fxOpen === key){ closeFxPanel(); return; }
+    if (fxOpen) closeFxPanel();
+    const ui = FX_UI[key];
+    fxOpen = key;
+    fxOpenSnapshot = editorSnapshot();
+    fxRange.min = String(ui.min); fxRange.max = String(ui.max); fxRange.step = String(ui.step);
+    fxRange.value = String(fx[key]);
+    fxRange.setAttribute('aria-label', ui.label);
+    $('fxLeft').textContent = ui.left; $('fxRight').textContent = ui.right;
+    fxPanel.dataset.fx = key;
+    fxPanel.hidden = false;
+    updateFxPanel();
+    refreshFxButtons();
+  }
+  function closeFxPanel(){
+    if (!fxOpen) return;
+    if (fxOpenSnapshot && fxOpenSnapshot.fx && !sameFx(fxOpenSnapshot.fx, fx)) pushEditorHistory(fxOpenSnapshot);
+    fxOpen = null; fxOpenSnapshot = null;
+    fxPanel.hidden = true;
+    refreshFxButtons();
+  }
+  function resetFxForNewFile(){
+    clearTimeout(fxRenderTimer);
+    fxJobSerial++;
+    if (fxWorkerBusy && fxWorker){ fxWorkerBusy = null; fxWorker.terminate(); fxWorker = null; }
+    fx = { ...FX_DEFAULT };
+    fxReady = null;
+    fxOpen = null; fxOpenSnapshot = null;
+    fxPanel.hidden = true;
+    updateFxStatus();
+    refreshFxButtons();
+  }
+  fxBar.addEventListener('click', e => {
+    const button = e.target.closest('.fx-btn');
+    if (button && !button.disabled) openFxPanel(button.dataset.fx);
+  });
+  fxRange.addEventListener('input', () => { if (fxOpen) setFxValue(fxOpen, parseFloat(fxRange.value)); });
+  $('fxReset').addEventListener('click', () => { if (fxOpen){ setFxValue(fxOpen, FX_DEFAULT[fxOpen]); fxRange.value = String(fx[fxOpen]); } });
+  $('fxAccept').addEventListener('click', closeFxPanel);
+  fxUiReady = true;
+  fxPanel.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === 'Escape'){ e.preventDefault(); closeFxPanel(); } });
+  refreshFxButtons();
+
   refreshEditButtons();
 
   window.addEventListener('beforeunload', () => {

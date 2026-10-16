@@ -7,12 +7,14 @@ on:
       - index.html
       - splitter-app.html
       - tests/verify_splitter_editor.js
+      - tests/verify_fx_shortcuts.js
       - .github/workflows/splitter-ui-test.yml
   pull_request:
     paths:
       - index.html
       - splitter-app.html
       - tests/verify_splitter_editor.js
+      - tests/verify_fx_shortcuts.js
       - .github/workflows/splitter-ui-test.yml
   workflow_dispatch:
 
@@ -41,6 +43,12 @@ jobs:
         run: |
           python3 -m http.server 4173 >/tmp/splitter-server.log 2>&1 &
           BROWSER=chromium node tests/verify_splitter_editor.js
+
+      - name: Run shortcuts and effects verification
+        run: |
+          python3 -m http.server 4173 >/tmp/splitter-server-fx.log 2>&1 &
+          sleep 1
+          node tests/verify_fx_shortcuts.js
 
   webkit-smoke:
     runs-on: ubuntu-latest
